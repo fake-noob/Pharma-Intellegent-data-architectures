@@ -3,6 +3,22 @@
 Data directory: `C:\Users\A-ONE LAPTOP\IDA project\Pharma-Intellegent-data-architectures`
 CSV chunk size: 100,000 rows (files are processed incrementally)
 
+> **Known profiling caveats (verified 2026-11-18 during pipeline implementation).**
+> This profile was produced with pandas type inference, which misreports some columns:
+>
+> - **GS1 identifiers are text, not integers.** `GTIN14` (14 digits) and the GLN columns
+>   (`PharmacyGLN`, `HospitalGLN`, `OriginPlantGLN`, `DestinationWarehouseGLN`,
+>   `WarehouseGLN`; 13 digits) begin with a leading zero (e.g. `09506000000015`) that the
+>   int64 inference drops. `SSCC18` is 18 digits, also with a leading zero; the float64
+>   inference in the IoT file additionally loses precision. The pipeline stores all of these as text.
+> - **`TraumaLevel` is not 50% missing.** Those rows contain the literal value `None`
+>   (no trauma designation), which pandas reads as NaN. There are no blank values.
+> - **Day-count columns are not dates.** The "Date range" values of 1970-01-01 shown for
+>   `ManufacturingLeadTimeDays`, `DowntimeHours` and `AverageLeadTimeDays` are artifacts of
+>   trying to parse integers as timestamps; ignore them.
+>
+> See `PROJECT_DECISIONS.md` decision 14 for the other source facts found during implementation.
+
 ## Dataset guide
 
 Pharma Supply Chain Dataset Guide and Relationship Mapping
