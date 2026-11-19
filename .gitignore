@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Local secrets / config
+.env
+
+# Generated warehouse files and pipeline working data
+warehouse/*.duckdb
+warehouse/*.duckdb.wal
+warehouse/tmp/

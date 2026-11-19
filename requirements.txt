@@ -1,0 +1,3 @@
+# Phase 1 pipeline runtime (Python 3.11+)
+duckdb>=1.1
+psycopg[binary]>=3.2

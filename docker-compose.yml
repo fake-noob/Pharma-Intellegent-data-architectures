@@ -1,0 +1,30 @@
+# Phase 1 local services. Airflow services are added in the orchestration step.
+services:
+  postgres:
+    image: postgres:16-alpine  # 16+ required: validation uses pg_input_is_valid()
+    container_name: pharma-staging-pg
+    environment:
+      POSTGRES_DB: ${PG_DB:-pharma_staging}
+      POSTGRES_USER: ${PG_USER:-pharma}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-pharma_dev_password}
+    # Memory sized for bulk staging/validation of the ~500k-row sales batch on a
+    # 4 GB Docker VM; defaults (4 MB work_mem, 8 MB temp_buffers) spill to disk.
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c work_mem=128MB
+      -c maintenance_work_mem=256MB
+      -c temp_buffers=256MB
+      -c max_wal_size=2GB
+    ports:
+      - "${PG_PORT:-5433}:5432"
+    volumes:
+      - pg_staging_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pg_staging_data:
