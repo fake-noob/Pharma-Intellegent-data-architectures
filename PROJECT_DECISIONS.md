@@ -10,7 +10,9 @@ what remains to be done. Decisions marked as proposed or pending are not final.
 - **Course project:** An automated pharmaceutical cold-chain data warehouse and
   BI pipeline, orchestrated with Apache Airflow.
 - **Immediate focus:** Phase 1, Sales & Demand Intelligence. The project plan's
-  Phase 1 BI-and-refresh milestone is November 25, 2026.
+  Phase 1 BI-and-refresh milestone was November 25, 2026 in the original plan;
+  the milestone dates have since been extended for all phases (see the
+  2026-11-20 progress entry).
 - **Later phases:** Inventory, Expiry & Replenishment; then Traceability & Cold
   Chain Performance. A combined enterprise constellation is an additional
   project objective.
@@ -513,6 +515,17 @@ checked against the mart before being recorded.
   with aggregate totals equal to the fact totals.
 - The ramp-up months, the volume-vs-revenue split and the flat margins are
   recorded as dashboard requirements for the BI step.
+
+### 2026-11-20 — Milestone dates extended; status
+
+- The milestone dates for all phases were extended after the original plan
+  document was issued. The new dates are not recorded here; add them when
+  confirmed in writing.
+- Status against the plan: the query-layer scope (original Milestone 1) is
+  complete and verified. The remaining Phase 1 work is the data generator,
+  file watcher/ingestion API, Airflow DAG, pipeline dashboards, BI dashboard
+  and two demonstrated refreshes (see next steps below). The project is on
+  track against the extended dates.
 
 ## Open decisions and next steps
 
