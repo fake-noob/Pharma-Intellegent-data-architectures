@@ -384,6 +384,35 @@ entry point.
 - Only 3 of the 63 medicines are cold-chain (`ColdChainFlag = Y`).
   Semaglutide and Insulin Aspart are the two slowest movers.
 
+### 15. BI design notes from the Phase 1 data (review of 2026-11-19)
+
+These came from an external review of the verification report; each was
+checked against the mart before being recorded.
+
+- **Sales start mid-ramp.** Sales begin on 2023-01-30: January 2023 has 2 days
+  of sales (3 packs, 2 medicines), and February 2023 has full coverage but low
+  volume (1,740 packs vs 4,312 in March). Hospital demand covers all of
+  January. Trend and month-over-month charts must flag 2023-01 and 2023-02 as
+  ramp-up months (annotation/tooltip) and exclude them from growth
+  calculations, so they don't read as a data defect or a collapse in demand.
+  `q3b` is unaffected because it uses the latest 12 months.
+- **Volume ≠ revenue.** In the latest 12 months the slowest mover by packs,
+  Semaglutide (cold-chain, 1,400 packs), earned $168,179, about 4.6× the
+  revenue of the fastest mover, Amoxicillin (6,260 packs, $36,808).
+  Mesalazine (#2 by volume) earned more still ($178,245). The fast/slow
+  dashboard should plot pack volume against net sales, colored by
+  ColdChainFlag, rather than rank by volume alone.
+- **Margin carries almost no signal.** The gross margin rate is 23.35–23.41%
+  across every channel and year, and 23.3–23.5% per medicine. The source data
+  evidently applies a fixed markup. The channel dashboard should lead with
+  revenue share (Retail ≈ 60%, Hospital ≈ 23%, E-commerce ≈ 17%) and volume
+  growth; any margin chart should keep a zero-based or clearly labelled
+  axis so that a 0.05-point range isn't exaggerated.
+- **Aggregate grain corrected.** `agg_hospital_demand_month` had been grouped
+  by hospital as well, which reproduced the fact grain (27,216 rows). It is
+  now month × medicine (2,268 rows), matching `agg_sales_month`.
+  Hospital-level views read the fact directly.
+
 ## Progress log
 
 ### 2026-11-18 — Project plan and source data reviewed
@@ -475,6 +504,15 @@ entry point.
   describe the DuckDB approach. The cells were edited directly in the sheet
   XML; a full cell-level comparison against the previous version shows that
   only those four cells changed.
+
+### 2026-11-19 — External review of Phase 1 outputs
+
+- All four review points were confirmed against the mart (decision 15).
+- `agg_hospital_demand_month` was rolled up to month × medicine (27,216 →
+  2,268 rows). After a rebuild, the verification report again passes 23/23,
+  with aggregate totals equal to the fact totals.
+- The ramp-up months, the volume-vs-revenue split and the flat margins are
+  recorded as dashboard requirements for the BI step.
 
 ## Open decisions and next steps
 

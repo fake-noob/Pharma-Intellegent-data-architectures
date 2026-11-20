@@ -56,11 +56,16 @@ SELECT SalesMonthKey AS MonthKey, SalesYearMonth AS YearMonth, MedicineID, Chann
 FROM v_sales
 GROUP BY ALL;
 
--- Monthly hospital demand by medicine and hospital. Stock balances are
--- semi-additive: summing across hospitals for one month is valid, across
--- months is not (MonthKey is always part of this grain).
+-- Monthly hospital demand by medicine, rolled up across hospitals (2,268 rows
+-- vs 27,216 in the fact). This matches agg_sales_month's medicine x month grain
+-- for cross-fact comparison. Hospital-level analysis (e.g. q2 hotspots) reads
+-- fact_hospital_demand directly. Stock balances are semi-additive: summing
+-- across hospitals for one month is valid, across months is not (MonthKey is
+-- always part of this grain). AbsForecastErrorPacks is summed from
+-- hospital-level rows, so WAPE computed from it keeps the per-hospital error.
 CREATE OR REPLACE TABLE agg_hospital_demand_month AS
-SELECT DemandMonthKey AS MonthKey, DemandYearMonth AS YearMonth, MedicineID, HospitalID,
+SELECT DemandMonthKey AS MonthKey, DemandYearMonth AS YearMonth, MedicineID,
+       count(DISTINCT HospitalID)          AS Hospitals,
        sum(ForecastDemandPacks)            AS ForecastDemandPacks,
        sum(RequestedQuantityPacks)         AS RequestedQuantityPacks,
        sum(ApprovedQuantityPacks)          AS ApprovedQuantityPacks,
