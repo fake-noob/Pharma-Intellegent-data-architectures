@@ -101,7 +101,16 @@ mismatched copy.
 
 ### Dashboards (Grafana)
 
-Four data engineering dashboards are provisioned from code (`grafana/`):
+Seven dashboards are provisioned from code (`grafana/`): three for the business (the Phase 1
+questions) and four for the data pipeline. Home is the hospital forecast dashboard.
+
+| Business dashboard | Question it answers |
+|---|---|
+| Hospital forecast vs consumption | How well was hospital demand forecast, and where did it go unmet? (filters: disease category, hospital) |
+| Channel revenue and margin | Where does revenue come from: retail, hospital pharmacies or e-commerce? (filters: disease category, channel) |
+| Fast and slow movers | Which medicines sell most and least, and how do cold-chain medicines compare? (filters: disease category, window) |
+
+The four pipeline dashboards:
 
 | Dashboard | Shows |
 |---|---|
@@ -117,7 +126,7 @@ docker compose up -d grafana                          # http://localhost:3000 (v
 .venv/Scripts/python tests/test_dashboards.py         # run every panel query through Grafana
 ```
 
-Dashboards refresh every 30 s and read only Postgres, as the `grafana_reader` role (it cannot see
+Dashboards refresh every 30 s (and read new data after each publish) and read only Postgres, as the `grafana_reader` role (it cannot see
 raw data or write anything). Dashboards are edited in `grafana/build_dashboards.py`, not in the UI.
 
 ### Layout

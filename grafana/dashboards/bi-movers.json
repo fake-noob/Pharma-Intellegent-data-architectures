@@ -1,0 +1,1135 @@
+{
+  "uid": "bi-movers",
+  "title": "Sales and demand: fast and slow movers",
+  "description": "Which medicines sell the most and least, and how cold-chain medicines compare.",
+  "tags": [
+    "pharma-bi"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "2023-01-01T00:00:00.000Z",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "tooltip": "",
+      "url": "",
+      "title": "Sales and demand",
+      "tags": [
+        "pharma-bi"
+      ]
+    },
+    {
+      "type": "dashboards",
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "tooltip": "",
+      "url": "",
+      "title": "Pipeline",
+      "tags": [
+        "pharma-sdi"
+      ]
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "disease_category",
+        "label": "Disease category",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "pharma-pg"
+        },
+        "query": "SELECT DISTINCT disease_category FROM mart.dim_medicine WHERE is_current AND medicine_key <> 0 ORDER BY 1",
+        "definition": "SELECT DISTINCT disease_category FROM mart.dim_medicine WHERE is_current AND medicine_key <> 0 ORDER BY 1",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": []
+      },
+      {
+        "name": "window",
+        "label": "Window (months)",
+        "type": "custom",
+        "query": "3,6,12,24",
+        "current": {
+          "selected": true,
+          "text": "12",
+          "value": "12"
+        },
+        "options": [
+          {
+            "text": "3",
+            "value": "3",
+            "selected": false
+          },
+          {
+            "text": "6",
+            "value": "6",
+            "selected": false
+          },
+          {
+            "text": "12",
+            "value": "12",
+            "selected": true
+          },
+          {
+            "text": "24",
+            "value": "24",
+            "selected": false
+          }
+        ],
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "Medicines in view",
+      "description": "Medicines matching the disease-category filter, including those with no sales in the window.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT count(*) FROM ranked",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 28,
+      "type": "stat",
+      "title": "Cold-chain medicines",
+      "description": "Medicines that need cold-chain storage, in the current selection.",
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT count(*) FILTER (WHERE cold_chain_flag) FROM ranked",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 29,
+      "type": "stat",
+      "title": "Cold-chain sales share",
+      "description": "Net sales of cold-chain medicines / all net sales in the window x 100.",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT round(100.0 * sum(net) FILTER (WHERE cold_chain_flag) / NULLIF(sum(net), 0), 1)\n                 FROM ranked",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "Cold-chain pack share",
+      "description": "Packs of cold-chain medicines / all packs in the window x 100. Compare with the share of net sales beside it: cold-chain medicines sell few packs but earn much more per pack.",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT round(100.0 * sum(packs) FILTER (WHERE cold_chain_flag) / NULLIF(sum(packs), 0), 1)\n                 FROM ranked",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "Fastest mover",
+      "description": "Medicine with the most packs sold in the window.",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT generic_name FROM ranked ORDER BY fast_rank, generic_name LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Slowest mover",
+      "description": "Medicine with the fewest packs sold in the window (ties: first by name).",
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT generic_name FROM ranked ORDER BY slow_rank, generic_name LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 33,
+      "type": "barchart",
+      "title": "Fast movers: top 10 by packs sold",
+      "description": "The ten medicines with the most packs sold in the selected window. Cold-chain medicines are orange.",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT generic_name AS medicine, CASE WHEN NOT cold_chain_flag THEN packs END AS \"Ambient\",\n                   CASE WHEN cold_chain_flag THEN packs END AS \"Cold chain\"\n                 FROM ranked WHERE fast_rank <= 10 ORDER BY fast_rank, generic_name LIMIT 10",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "custom": {
+            "fillOpacity": 90,
+            "lineWidth": 0,
+            "gradientMode": "none",
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "axisGridShow": true,
+            "axisColorMode": "text",
+            "axisCenteredZero": false,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ambient"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cold chain"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "normal",
+        "groupWidth": 0.7,
+        "barWidth": 0.4,
+        "barRadius": 0.15,
+        "fullHighlight": false,
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 34,
+      "type": "barchart",
+      "title": "Slow movers: bottom 10 by packs sold",
+      "description": "The ten medicines with the fewest packs sold, including any with no sales. There is no fixed threshold for slow: this is a ranking.",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT generic_name AS medicine, CASE WHEN NOT cold_chain_flag THEN packs END AS \"Ambient\",\n                   CASE WHEN cold_chain_flag THEN packs END AS \"Cold chain\"\n                 FROM ranked WHERE slow_rank <= 10 ORDER BY slow_rank, generic_name LIMIT 10",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "custom": {
+            "fillOpacity": 90,
+            "lineWidth": 0,
+            "gradientMode": "none",
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "axisGridShow": true,
+            "axisColorMode": "text",
+            "axisCenteredZero": false,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ambient"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cold chain"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "normal",
+        "groupWidth": 0.7,
+        "barWidth": 0.4,
+        "barRadius": 0.15,
+        "fullHighlight": false,
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 38,
+      "type": "trend",
+      "title": "Volume vs revenue by medicine",
+      "description": "Each point is a medicine: packs sold (left to right) against net sales (bottom to top) in the window. Cold-chain medicines (orange) sit high for their volume: few packs, much more revenue per pack.",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 14,
+        "h": 11
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT packs AS \"Packs sold\", CASE WHEN NOT cold_chain_flag THEN net END AS \"Ambient\",\n                   CASE WHEN cold_chain_flag THEN net END AS \"Cold chain\" FROM ranked ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 0,
+            "showPoints": "always",
+            "pointSize": 11,
+            "fillOpacity": 85,
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "axisGridShow": true,
+            "axisBorderShow": false,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "unit": "currencyUSD",
+          "noValue": "No data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ambient"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cold chain"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Packs sold"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "xField": "Packs sold",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 35,
+      "type": "table",
+      "title": "Disease categories",
+      "description": "Packs and net sales per disease category in the window.",
+      "gridPos": {
+        "x": 14,
+        "y": 14,
+        "w": 10,
+        "h": 11
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT disease_category AS \"disease category\",\n                         count(*) FILTER (WHERE cold_chain_flag) AS \"cold chain\",\n                         sum(packs) AS packs, round(sum(net), 0) AS \"net sales (USD)\"\n                  FROM ranked GROUP BY 1 ORDER BY 4 DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "disease category"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "packs"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "net sales (USD)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 36,
+      "type": "table",
+      "title": "Cold-chain medicines",
+      "description": "The cold-chain medicines: their volume rank is low but their revenue per pack is high.",
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 6
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT generic_name AS medicine, therapeutic_class AS class, packs,\n                         round(net, 0) AS \"net sales (USD)\", round(net / NULLIF(packs, 0), 2) AS \"net per pack (USD)\",\n                         fast_rank AS \"volume rank\"\n                  FROM ranked WHERE cold_chain_flag ORDER BY net DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "noValue": "No cold-chain medicines in this selection",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "packs"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "net sales (USD)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 37,
+      "type": "table",
+      "title": "All medicines ranked by packs sold",
+      "description": "Every medicine in the selection, including those with no sales in the window.",
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 24,
+        "h": 14
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT fast_rank AS rank, generic_name AS medicine, therapeutic_class AS class,\n                         CASE WHEN cold_chain_flag THEN 'yes' ELSE 'no' END AS \"cold chain\", packs,\n                         round(net, 0) AS \"net sales (USD)\"\n                  FROM ranked ORDER BY fast_rank, generic_name",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "packs"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "net sales (USD)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    }
+  ]
+}

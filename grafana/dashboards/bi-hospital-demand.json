@@ -1,0 +1,1249 @@
+{
+  "uid": "bi-hospital-demand",
+  "title": "Sales and demand: hospital forecast vs consumption",
+  "description": "How well hospital demand was forecast, and where it went unmet.",
+  "tags": [
+    "pharma-bi"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "2023-01-01T00:00:00.000Z",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "tooltip": "",
+      "url": "",
+      "title": "Sales and demand",
+      "tags": [
+        "pharma-bi"
+      ]
+    },
+    {
+      "type": "dashboards",
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "tooltip": "",
+      "url": "",
+      "title": "Pipeline",
+      "tags": [
+        "pharma-sdi"
+      ]
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "disease_category",
+        "label": "Disease category",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "pharma-pg"
+        },
+        "query": "SELECT DISTINCT disease_category FROM mart.dim_medicine WHERE is_current AND medicine_key <> 0 ORDER BY 1",
+        "definition": "SELECT DISTINCT disease_category FROM mart.dim_medicine WHERE is_current AND medicine_key <> 0 ORDER BY 1",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": []
+      },
+      {
+        "name": "hospital",
+        "label": "Hospital",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "pharma-pg"
+        },
+        "query": "SELECT DISTINCT hospital_name FROM mart.dim_hospital WHERE is_current AND hospital_key <> 0 ORDER BY 1",
+        "definition": "SELECT DISTINCT hospital_name FROM mart.dim_hospital WHERE is_current AND hospital_key <> 0 ORDER BY 1",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Consumption vs forecast",
+      "description": "(Packs consumed - packs forecast) / packs forecast x 100, from summed packs. Positive means hospitals consumed more than forecast.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * (sum(f.consumed_quantity_packs) - sum(f.forecast_demand_packs))\n                       / NULLIF(sum(f.forecast_demand_packs), 0), 2) FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Forecast error (WAPE)",
+      "description": "Weighted absolute percentage error: sum of |consumed - forecast| at hospital, medicine and month level / sum consumed x 100. Lower is better; over- and under-forecasts do not cancel.",
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * sum(abs(f.consumed_quantity_packs - f.forecast_demand_packs))\n                       / NULLIF(sum(f.consumed_quantity_packs), 0), 2) FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Request fill rate",
+      "description": "Packs received / packs requested x 100 (ratio of sums).",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * sum(f.received_quantity_packs)\n                       / NULLIF(sum(f.requested_quantity_packs), 0), 2) FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Dispensing service level",
+      "description": "Share of demand that could be dispensed: 1 - unfulfilled / (dispensed + unfulfilled). This is what the source's ServiceLevelPct measures; it differs from the request fill rate beside it (decision 14).",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * (1 - sum(f.unfulfilled_demand_packs)::numeric\n                       / NULLIF(sum(f.dispensed_quantity_packs) + sum(f.unfulfilled_demand_packs), 0)), 2)\n                 FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "unit": "percent",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Unfulfilled demand",
+      "description": "Packs of demand that could not be met (source value).",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(f.unfulfilled_demand_packs), 0) FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Stockout days",
+      "description": "Days with a stockout, summed over hospital, medicine and month records.",
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(f.stockout_days), 0) FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Forecast vs consumption (packs per month)",
+      "description": "Hospital forecast demand (gray) against what was actually consumed (blue), same unit and axis. Filters above apply to every panel.",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 14,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT d.full_date::timestamp AS time, sum(f.forecast_demand_packs) AS \"Forecast\",\n                          sum(f.consumed_quantity_packs) AS \"Consumed\" FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)\n                   GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "lineInterpolation": "linear",
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 8,
+            "spanNulls": true,
+            "axisGridShow": true,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "barAlignment": 0,
+            "gradientMode": "none",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Consumed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Forecast"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#898781"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "Consumption vs forecast by disease category (%)",
+      "description": "Variance from summed packs per disease category. Positive = consumed more than forecast. The zero line is the forecast.",
+      "gridPos": {
+        "x": 14,
+        "y": 4,
+        "w": 10,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT m.disease_category AS \"disease category\",\n                        round(100.0 * (sum(f.consumed_quantity_packs) - sum(f.forecast_demand_packs))\n                              / NULLIF(sum(f.forecast_demand_packs), 0), 2) AS \"Variance (%)\"\n                 FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "custom": {
+            "fillOpacity": 90,
+            "lineWidth": 0,
+            "gradientMode": "none",
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "axisGridShow": true,
+            "axisColorMode": "text",
+            "axisCenteredZero": false,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.4,
+        "barRadius": 0.15,
+        "fullHighlight": false,
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Largest forecast gaps by medicine",
+      "description": "The ten medicines whose total consumption is furthest from forecast, in packs. WAPE shows month-by-month error even where over- and under-forecasts cancel.",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 14,
+        "h": 11
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT m.generic_name AS medicine,\n                         sum(f.forecast_demand_packs) AS forecast, sum(f.consumed_quantity_packs) AS consumed,\n                         sum(f.consumed_quantity_packs) - sum(f.forecast_demand_packs) AS \"variance (packs)\",\n                         round(100.0 * (sum(f.consumed_quantity_packs) - sum(f.forecast_demand_packs))\n                               / NULLIF(sum(f.forecast_demand_packs), 0), 2) AS \"variance (%)\",\n                         round(100.0 * sum(abs(f.consumed_quantity_packs - f.forecast_demand_packs))\n                               / NULLIF(sum(f.consumed_quantity_packs), 0), 2) AS \"WAPE (%)\"\n                  FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1\n                  ORDER BY abs(sum(f.consumed_quantity_packs) - sum(f.forecast_demand_packs)) DESC LIMIT 10",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "medicine"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "forecast"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "consumed"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Unfulfilled demand by month (packs)",
+      "description": "Demand that could not be met, per month.",
+      "gridPos": {
+        "x": 14,
+        "y": 13,
+        "w": 10,
+        "h": 11
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT d.full_date::timestamp AS time, sum(f.unfulfilled_demand_packs) AS \"Unfulfilled packs\"\n                   FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 2,
+            "lineInterpolation": "linear",
+            "fillOpacity": 85,
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": true,
+            "axisGridShow": true,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "barAlignment": 0,
+            "gradientMode": "none",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "barchart",
+      "title": "Unfulfilled demand: hospital and medicine pairs",
+      "description": "The ten hospital and medicine combinations with the most unmet demand.",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT h.hospital_name || ' - ' || m.generic_name AS pair,\n                        sum(f.unfulfilled_demand_packs) AS \"Unfulfilled packs\"\n                 FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY h.hospital_name, m.generic_name\n                 HAVING sum(f.unfulfilled_demand_packs) > 0 ORDER BY 2 DESC LIMIT 10",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "custom": {
+            "fillOpacity": 90,
+            "lineWidth": 0,
+            "gradientMode": "none",
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "axisGridShow": true,
+            "axisColorMode": "text",
+            "axisCenteredZero": false,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.4,
+        "barRadius": 0.15,
+        "fullHighlight": false,
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Unfulfilled demand detail",
+      "description": "Where demand went unmet: how much, the request fill rate and how often stock ran out.",
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT h.hospital_name AS hospital, m.generic_name AS medicine,\n                         sum(f.unfulfilled_demand_packs) AS unfulfilled,\n                         round(100.0 * sum(f.received_quantity_packs)\n                               / NULLIF(sum(f.requested_quantity_packs), 0), 2) AS \"fill rate %\",\n                         sum(f.stockout_days) AS \"stockout days\"\n                  FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1, 2 HAVING sum(f.unfulfilled_demand_packs) > 0\n                  ORDER BY 3 DESC, 5 DESC LIMIT 15",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "noValue": "No unfulfilled demand in this selection",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hospital"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 205
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "medicine"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 125
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "barchart",
+      "title": "Stockout days by hospital",
+      "description": "Days with a stockout, by hospital, summed over medicines and months.",
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT h.hospital_name AS hospital, sum(f.stockout_days) AS \"Stockout days\"\n                 FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "custom": {
+            "fillOpacity": 90,
+            "lineWidth": 0,
+            "gradientMode": "none",
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "axisGridShow": true,
+            "axisColorMode": "text",
+            "axisCenteredZero": false,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.4,
+        "barRadius": 0.15,
+        "fullHighlight": false,
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Request fill rate by month (%)",
+      "description": "Packs received / packs requested, by month. The axis does not start at zero: it shows small movements around a high rate.",
+      "gridPos": {
+        "x": 12,
+        "y": 34,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT d.full_date::timestamp AS time,\n                          round(100.0 * sum(f.received_quantity_packs)\n                                / NULLIF(sum(f.requested_quantity_packs), 0), 2) AS \"Fill rate (%)\"\n                   FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "lineInterpolation": "linear",
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 8,
+            "spanNulls": true,
+            "axisGridShow": true,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "barAlignment": 0,
+            "gradientMode": "none",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ]
+}

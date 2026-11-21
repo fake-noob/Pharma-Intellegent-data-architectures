@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import sys
+from datetime import datetime
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -34,14 +36,45 @@ def post(path: str, body: dict) -> dict:
         return json.load(exc)
 
 
-def run_panel(panel: dict) -> tuple[int, str | None]:
+def epoch_ms(value: str) -> str:
+    """Dashboard time bounds: 'now', 'now-90d' pass through; ISO dates become epoch milliseconds."""
+    if value.startswith("now"):
+        return value
+    return str(int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() * 1000))
+
+
+def query(sql: str, time_range: dict, fmt: str = "table") -> dict:
+    body = {"from": epoch_ms(time_range["from"]), "to": epoch_ms(time_range["to"]), "queries": [{
+        "refId": "A", "datasource": {"type": "grafana-postgresql-datasource", "uid": "pharma-pg"},
+        "rawSql": sql, "format": fmt, "rawQuery": True, "editorMode": "code",
+        "intervalMs": 60000, "maxDataPoints": 500}]}
+    return post("/api/ds/query", body).get("results", {}).get("A", {})
+
+
+def resolve_variables(dash: dict) -> dict[str, str]:
+    """What the browser would substitute for each template variable on first load."""
+    out = {}
+    for var in dash.get("templating", {}).get("list", []):
+        if var["type"] == "custom":
+            out[var["name"]] = var["current"]["value"]
+        else:  # query variable, 'All' selected: every value, quoted and comma-joined
+            frames = query(var["query"], dash["time"]).get("frames", [])
+            values = frames[0]["data"]["values"][0] if frames and frames[0]["data"]["values"] else []
+            assert values, f"variable {var['name']} has no values"
+            out[var["name"]] = ",".join("'" + v.replace("'", "''") + "'" for v in values)
+    return out
+
+
+def substitute(sql: str, variables: dict[str, str]) -> str:
+    for name in sorted(variables, key=len, reverse=True):
+        sql = re.sub(r"\$\{?" + name + r"\}?(?![A-Za-z_])", lambda _m, v=variables[name]: v, sql)
+    return sql
+
+
+def run_panel(panel: dict, dash: dict, variables: dict[str, str]) -> tuple[int, str | None]:
     """Returns (row count of the first frame, error message or None)."""
     target = panel["targets"][0]
-    body = {"from": "now-90d", "to": "now", "queries": [{
-        "refId": target["refId"], "datasource": target["datasource"], "rawSql": target["rawSql"],
-        "format": target["format"], "rawQuery": True, "editorMode": "code",
-        "intervalMs": 60000, "maxDataPoints": 500}]}
-    result = post("/api/ds/query", body).get("results", {}).get(target["refId"], {})
+    result = query(substitute(target["rawSql"], variables), dash["time"], target["format"])
     if result.get("error"):
         return 0, result["error"]
     frames = result.get("frames", [])
@@ -53,8 +86,12 @@ def test_every_panel_query_runs():
     failures, checked = [], 0
     for path in sorted(DASHBOARDS.glob("*.json")):
         dash = json.loads(path.read_text(encoding="utf-8"))
+        variables = resolve_variables(dash)
+        for annotation in dash["annotations"]["list"]:           # annotation queries must run too
+            err = query(annotation["target"]["rawSql"], dash["time"]).get("error")
+            assert not err, f"{dash['uid']} annotation {annotation['name']}: {err}"
         for panel in dash["panels"]:
-            rows, error = run_panel(panel)
+            rows, error = run_panel(panel, dash, variables)
             checked += 1
             status = "ERROR " + error if error else f"{rows} rows"
             print(f"  {dash['uid']:<22} {panel['title'][:52]:<52} {status[:90]}")
@@ -62,14 +99,15 @@ def test_every_panel_query_runs():
                 failures.append((dash["uid"], panel["title"], error))
             elif rows == 0 and panel["title"] not in MAY_BE_EMPTY:
                 failures.append((dash["uid"], panel["title"], "returned no rows"))
-    assert checked >= 30, f"only {checked} panels found"
+    assert checked >= 50, f"only {checked} panels found"
     assert not failures, "\n".join(f"{d} / {t}: {e}" for d, t, e in failures)
 
 
 def test_dashboards_are_provisioned_and_linked():
     req = urllib.request.Request(GRAFANA + "/api/search?type=dash-db", headers={"Authorization": AUTH})
     found = {d["uid"] for d in json.load(urllib.request.urlopen(req, timeout=30))}
-    assert {"de-batch-ingestion", "de-storage", "de-query-performance", "de-refresh-monitor"} <= found
+    assert {"de-batch-ingestion", "de-storage", "de-query-performance", "de-refresh-monitor",
+            "bi-hospital-demand", "bi-channel-revenue", "bi-movers"} <= found
 
 
 if __name__ == "__main__":

@@ -26,17 +26,31 @@
   "links": [
     {
       "type": "dashboards",
-      "title": "Pipeline dashboards",
-      "tags": [
-        "pharma-sdi"
-      ],
-      "asDropdown": false,
+      "asDropdown": true,
       "icon": "external link",
       "includeVars": false,
-      "keepTime": true,
+      "keepTime": false,
       "targetBlank": false,
       "tooltip": "",
-      "url": ""
+      "url": "",
+      "title": "Sales and demand",
+      "tags": [
+        "pharma-bi"
+      ]
+    },
+    {
+      "type": "dashboards",
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "tooltip": "",
+      "url": "",
+      "title": "Pipeline",
+      "tags": [
+        "pharma-sdi"
+      ]
     }
   ],
   "annotations": {

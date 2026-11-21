@@ -158,15 +158,21 @@ def text_override(column: str, **props) -> dict:
             "properties": [{"id": k, "value": v} for k, v in props.items()]}
 
 
-def dashboard(uid, title, description, panels, tags=("pharma-sdi",)):
+def _links() -> list[dict]:
+    base = {"type": "dashboards", "asDropdown": True, "icon": "external link", "includeVars": False,
+            "keepTime": False, "targetBlank": False, "tooltip": "", "url": ""}
+    return [{**base, "title": "Sales and demand", "tags": ["pharma-bi"]},
+            {**base, "title": "Pipeline", "tags": ["pharma-sdi"]}]
+
+
+def dashboard(uid, title, description, panels, tags=("pharma-sdi",), templating=None,
+              annotations=None, time=None, refresh="30s"):
     return {"uid": uid, "title": title, "description": description, "tags": list(tags),
             "timezone": "utc", "schemaVersion": 39, "version": 1, "editable": False,
-            "graphTooltip": 1, "refresh": "30s", "time": {"from": "now-90d", "to": "now"},
+            "graphTooltip": 1, "refresh": refresh, "time": time or {"from": "now-90d", "to": "now"},
             "timepicker": {"refresh_intervals": ["10s", "30s", "1m", "5m"]},
-            "links": [{"type": "dashboards", "title": "Pipeline dashboards", "tags": ["pharma-sdi"],
-                       "asDropdown": False, "icon": "external link", "includeVars": False,
-                       "keepTime": True, "targetBlank": False, "tooltip": "", "url": ""}],
-            "annotations": {"list": []}, "templating": {"list": []}, "panels": panels}
+            "links": _links(), "annotations": {"list": annotations or []},
+            "templating": {"list": templating or []}, "panels": panels}
 
 
 OK_STATUS = "status IN ('loaded', 'validated')"
@@ -420,6 +426,8 @@ def main() -> None:
         (OUT / f"{name}.json").write_text(json.dumps(build(), indent=2, ensure_ascii=False) + "\n",
                                           encoding="utf-8")
         print("wrote", name)
+    import build_bi
+    build_bi.main()
 
 
 if __name__ == "__main__":

@@ -677,6 +677,56 @@ contains one earlier error from development (the first q4 run), so the error-rat
 2.6% until older history is cleared; Grafana cannot be edited from its UI by design; viewing
 requires no login, so use only on a trusted machine.
 
+### 21. Business dashboards (Phase 1 BI)
+
+**Decision:** Three Grafana dashboards, one per question in the project plan, built by
+`grafana/build_bi.py` on the Postgres `mart` schema (same provisioning and read-only role as
+decision 20). They have filters (Grafana template variables), a shaded sales ramp-up band on time
+charts, and tiles that lead each dashboard. The hospital dashboard is the Grafana home page.
+
+| Plan dashboard | Dashboard | Main content |
+|---|---|---|
+| Hospital forecast vs actual consumption ratio; unfulfilled demand analysis | Hospital forecast vs consumption | Tiles: consumption vs forecast %, WAPE, request fill rate, dispensing service level, unfulfilled packs, stockout days. Forecast vs consumed by month; variance by disease category; largest medicine gaps; unfulfilled demand by month, by hospital-medicine pair and in detail; stockout days by hospital; fill rate by month |
+| Channel revenue split and gross margin comparison | Channel revenue and margin | Tiles: net sales, packs, transactions, margin rate, return rate, 12-month growth. Net sales by month and channel (stacked, ramp-up shaded); revenue share; yearly stacked columns; growth table; margin and returns table; net sales by disease category |
+| Top 10 fast vs slow movers (cold chain) by therapeutic class | Fast and slow movers | Tiles: medicines, cold-chain count, cold-chain share of net sales and of packs, fastest and slowest mover. Top 10 and bottom 10 by packs (cold chain in orange); volume-vs-revenue scatter; disease-category and cold-chain tables; full ranking |
+
+**Rules applied (decisions 7 and 15):**
+- Every ratio is a ratio of sums, never an average of row percentages; hospital and sales data
+  are aggregated separately and never joined row to row.
+- The window for the movers (3/6/12/24 months, default 12) is counted back from the latest month
+  in the data, so it moves forward after each refresh. Medicines with no sales in the window are
+  ranked (slowest first), as decided.
+- The growth tile and table compare the latest 12 months with the 12 before and ignore the time
+  picker, so the 2023 ramp-up months cannot inflate growth. The ramp-up is shaded on time charts.
+- Margin is flat (23.4% in every channel and year), so the channel view leads with revenue share
+  and growth; margin is a tile and a table, not a chart.
+- Volume is not revenue: the scatter and the cold-chain tiles show that cold-chain medicines are
+  2.3% of packs but 16% of net sales, and the three cold-chain medicines (Semaglutide, Insulin
+  Glargine, Insulin Aspart) are among the slowest sellers by packs.
+- Request fill rate (92.7%) and dispensing service level (99.96%) are shown side by side and
+  described, because the source's ServiceLevelPct measures the second (decision 14).
+
+**Design change from the plan:** class-level charts and filters use **disease category** (7
+values, 9 medicines each), not therapeutic class. There are 49 therapeutic classes for 63 medicines,
+which cannot be read as a bar chart. The workbook hierarchy (disease category > therapeutic class >
+medicine) is kept: therapeutic class stays a column in the medicine tables. Because the dataset has
+only three cold-chain medicines, "top 10 cold-chain medicines" is the whole set and is shown as a
+table; fast and slow rankings cover all medicines with cold chain highlighted.
+
+**Verified (2026-11-21):** `tests/test_dashboards.py` now covers 76 panels in seven dashboards plus
+the annotation query, resolving filter variables the way the browser does. The headline numbers
+equal the DuckDB warehouse exactly: the six hospital KPIs, the five channel KPIs, the revenue
+shares (60.1 / 23.0 / 16.9%) and the top three fast movers (Amoxicillin 6,260 packs, Mesalazine,
+Azithromycin). Each dashboard was rendered and inspected; this found and fixed a Grafana macro that
+cannot parse commas (so the channel queries failed), 49-bar class charts, year labels shown as
+dollar amounts, a scatter panel that crashed (replaced with Grafana's Trend panel in points mode),
+and clipped tables and tile titles.
+
+**Limits:** all data shown is as of the last publish; filters are 'All' by default; the scatter has
+no per-point labels (hover shows values); the "rising sales with unmet hospital demand" analysis
+(query q3b) returns no medicines on the supplied data, so it has no panel; the cold-chain slice
+has only three medicines, so conclusions about it are anecdotal.
+
 ## Progress log
 
 ### 2026-11-18 — Project plan and source data reviewed
@@ -845,6 +895,12 @@ query-performance dashboards, the BI dashboard, and two demonstrated refreshes.
   (decision 20). Fixed two real bugs found on the way (purged raw staging, old staging
   schema). All five test suites pass.
 
+### 2026-11-21 — Business dashboards built
+
+- Added `grafana/build_bi.py` (three dashboards, 38 panels), template-variable support in
+  `tests/test_dashboards.py` (76 panels total now pass) and the hospital dashboard as the Grafana home
+  page (decision 21).
+
 ## Open decisions and next steps
 
 1. Validate the business requirements and candidate KPI definitions with the
@@ -861,10 +917,9 @@ query-performance dashboards, the BI dashboard, and two demonstrated refreshes.
 4. ~~Data generator~~ done (decision 16). Remaining: the 1-2 page PDF on the
    generation methodology and statistics (worth 2%), written from
    `oversampled/DATA_DICTIONARY.md` and `generation_manifest.json`.
-5. ~~DE observability dashboards~~ done (decision 20). Remaining: the BI dashboard
-   (forecast vs consumption and unfulfilled demand; channel revenue and margin;
-   fast/slow movers) on the `mart` schema, following decision 15, and the
-   demonstration of two refreshes with the dashboards changing.
+5. ~~DE observability dashboards~~ done (decision 20). ~~BI dashboards~~ done (decision 21).
+   Remaining: the demonstration of two refreshes with the dashboards changing, and a
+   rehearsal of it end to end (generate, Airflow DAG, publish, dashboards update).
 6. ~~Decide how BI reads DuckDB while Airflow writes it~~ done: publish to the
    Postgres `mart` schema (decision 19). Next: add Grafana with a read-only role.
 7. Record subsequent decisions, implementation progress, refresh evidence, and
