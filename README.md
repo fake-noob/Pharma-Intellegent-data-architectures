@@ -99,6 +99,27 @@ mismatched copy.
 .venv/Scripts/python -m pipeline.run_phase1 publish     # or let the Airflow DAG do it
 ```
 
+### Dashboards (Grafana)
+
+Four data engineering dashboards are provisioned from code (`grafana/`):
+
+| Dashboard | Shows |
+|---|---|
+| Batch ingestion | success rate, load duration and rows per file, load speed, data-quality findings |
+| Storage and coverage | table row counts, DuckDB and Postgres size, storage by source domain, date coverage |
+| Query performance | execution time per query, volume, error rate |
+| Refresh monitor | what changed after each refresh: publish history, months loaded, batches |
+
+```bash
+.venv/Scripts/python -m pipeline.run_phase1 publish   # creates the read-only login and the mart schema
+docker compose up -d grafana                          # http://localhost:3000 (viewing needs no login; admin / admin to sign in)
+.venv/Scripts/python grafana/build_dashboards.py      # regenerate the dashboard JSON after editing it
+.venv/Scripts/python tests/test_dashboards.py         # run every panel query through Grafana
+```
+
+Dashboards refresh every 30 s and read only Postgres, as the `grafana_reader` role (it cannot see
+raw data or write anything). Dashboards are edited in `grafana/build_dashboards.py`, not in the UI.
+
 ### Layout
 
 | Path | Purpose |
@@ -106,6 +127,7 @@ mismatched copy.
 | `pipeline/ingest.py` | Chunked CSV → `staging.raw_*`, batch metrics |
 | `pipeline/publish.py` | Copies dashboard tables from DuckDB to the Postgres `mart` schema, with parity checks |
 | `pipeline/tasks.py` | One function per Airflow task (generate, deliver, stage, validate, load, verify, publish) |
+| `grafana/` | Provisioning, dashboard builder and the four generated dashboards |
 | `airflow/` | Dockerfile, startup script and the two DAGs |
 | `pipeline/watcher.py` | Landing-zone file watcher (waits for files to finish copying; archives or fails them) |
 | `pipeline/api.py` | HTTP ingestion API: upload, process, list batches |
@@ -115,6 +137,7 @@ mismatched copy.
 | `pipeline/generate/` | Oversampling: generates refresh files and the data dictionary |
 | `pipeline/sql/` | Staging DDL, mart DDL, serving views, analysis queries |
 | `tests/test_generator.py` | Checks generated files against the source data's identities and relationships |
+| `tests/test_dashboards.py` | Runs every dashboard panel query through Grafana (needs the stack up) |
 | `tests/test_tasks.py` | Dress rehearsal of the DAG: two refreshes through the task chain, idempotency, quality gate |
 | `tests/test_watcher_api.py` | Watcher lifecycle, partial files, duplicates, locking and API upload rules |
 | `tests/test_pipeline_negative.py` | Bad-data, idempotency and SCD2 integration test (uses a separate `pharma_test` DB) |

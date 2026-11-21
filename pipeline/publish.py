@@ -13,7 +13,10 @@ DuckDB and is represented by its monthly aggregate):
   ``agg_hospital_demand_month``
 * ``etl_batch_load`` and ``etl_query_log`` (pipeline observability)
 * ``table_stats`` (row counts and date coverage of every warehouse table, including
-  ``fact_sales``) and ``publish_log`` (one row per publish: duration, DuckDB file size)
+  ``fact_sales``), ``storage_stats`` (rows and bytes of each staging table by source domain)
+  and ``publish_log`` (one row per publish: duration, DuckDB file size)
+
+It also keeps a read-only ``grafana_reader`` login in sync for the dashboards.
 
 Column names are converted to snake_case (``NetSalesAmountUSD`` -> ``net_sales_amount_usd``).
 Each table is replaced inside one transaction, so readers see the old data until the new
@@ -24,14 +27,17 @@ and the publish fails on any difference. Reporting views in ``sql/mart_pg_views.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from decimal import Decimal
 
 import duckdb
+from psycopg import sql
 
 from .config import SQL_DIR, settings
 from .db import pg_connect
+from .ingest import ensure_raw_schema
 from .sources import snake
 
 log = logging.getLogger(__name__)
@@ -159,6 +165,50 @@ def _parity(duck, pg, published: dict[str, int]) -> list[str]:
     return problems
 
 
+# Staging tables per source domain, for the storage-breakdown dashboard.
+STORAGE_TABLES = (
+    ("Raw staging", "Medicine master", "staging.raw_medicine"),
+    ("Raw staging", "Pharmacy sales", "staging.raw_sales"),
+    ("Raw staging", "Hospital demand", "staging.raw_hospital_demand"),
+    ("Validated staging", "Medicine master", "staging.stg_medicine"),
+    ("Validated staging", "Pharmacy sales", "staging.stg_sales"),
+    ("Validated staging", "Hospital demand", "staging.stg_hospital_demand"),
+)
+READER_ROLE = "grafana_reader"
+
+
+def _publish_storage_stats(pg) -> None:
+    """Exact row counts and on-disk size (table + indexes) of each staging table."""
+    pg.execute(f"""CREATE TABLE IF NOT EXISTS {SCHEMA}.storage_stats (
+        layer TEXT, domain TEXT, table_name TEXT, row_count BIGINT, bytes BIGINT,
+        published_at TIMESTAMPTZ NOT NULL, PRIMARY KEY (layer, domain))""")
+    pg.execute(f"TRUNCATE {SCHEMA}.storage_stats")
+    for layer, domain, table in STORAGE_TABLES:
+        n = pg.execute(sql.SQL("SELECT count(*) FROM {}").format(
+            sql.Identifier(*table.split(".")))).fetchone()[0]
+        size = pg.execute("SELECT pg_total_relation_size(%s::regclass)", (table,)).fetchone()[0]
+        pg.execute(f"INSERT INTO {SCHEMA}.storage_stats VALUES (%s, %s, %s, %s, %s, now())",
+                   (layer, domain, table, n, size))
+
+
+def ensure_reader_role(pg) -> None:
+    """A login that can only read the published tables and the batch/quality logs.
+
+    Dashboards connect as this role, so they can never modify or even see the raw data.
+    The password comes from GRAFANA_DB_PASSWORD (local development default below).
+    """
+    password = os.environ.get("GRAFANA_DB_PASSWORD", "grafana_reader_pw")
+    verb = "ALTER" if pg.execute("SELECT 1 FROM pg_roles WHERE rolname = %s",
+                                 (READER_ROLE,)).fetchone() else "CREATE"
+    pg.execute(sql.SQL(f"{verb} ROLE {READER_ROLE} LOGIN PASSWORD {{}}").format(sql.Literal(password)))
+    db = pg.execute("SELECT current_database()").fetchone()[0]
+    pg.execute(sql.SQL(f"GRANT CONNECT ON DATABASE {{}} TO {READER_ROLE}").format(sql.Identifier(db)))
+    pg.execute(f"GRANT USAGE ON SCHEMA {SCHEMA}, staging TO {READER_ROLE}")
+    pg.execute(f"GRANT SELECT ON ALL TABLES IN SCHEMA {SCHEMA} TO {READER_ROLE}")
+    pg.execute(f"ALTER DEFAULT PRIVILEGES IN SCHEMA {SCHEMA} GRANT SELECT ON TABLES TO {READER_ROLE}")
+    pg.execute(f"GRANT SELECT ON staging.ingest_batch, staging.dq_issue TO {READER_ROLE}")
+
+
 def run_publish() -> dict:
     t0 = time.perf_counter()
     if not settings.duckdb_path.is_file():
@@ -167,6 +217,8 @@ def run_publish() -> dict:
     duck.execute("SET TimeZone = 'UTC'")
     try:
         # autocommit: the explicit transaction below is then a real one, not a savepoint.
+        with pg_connect() as pg:
+            ensure_raw_schema(pg)      # upgrades an older staging schema in place (idempotent)
         with pg_connect(autocommit=True) as pg:
             pg.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
             published: dict[str, int] = {}
@@ -187,6 +239,9 @@ def run_publish() -> dict:
                 if problems:
                     raise RuntimeError("publish parity check failed (nothing was changed): "
                                        + "; ".join(problems))
+
+                _publish_storage_stats(pg)
+                ensure_reader_role(pg)
 
                 views = SQL_DIR / "mart_pg_views.sql"
                 if views.is_file():

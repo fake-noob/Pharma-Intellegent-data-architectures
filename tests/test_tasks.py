@@ -34,6 +34,7 @@ from pipeline.db import duck_connect, pg_connect  # noqa: E402
 def test_two_refreshes_through_the_task_chain():
     with pg_connect() as pg:
         pg.execute("DROP SCHEMA IF EXISTS staging CASCADE")
+        pg.execute("DROP SCHEMA IF EXISTS mart CASCADE")
         pg.commit()
 
     # One-time initial load (the sdi_initial_load DAG): here just the medicine master.
@@ -83,6 +84,14 @@ def test_two_refreshes_through_the_task_chain():
         # Months from both refreshes are present: new data was added, not replaced.
         assert duck.execute("SELECT count(DISTINCT SalesYearMonth) FROM v_sales").fetchone()[0] == 6
 
+    # An unclean database restart empties the UNLOGGED raw staging tables. Verification must
+    # then check the source files against the validated staging copy, not fail.
+    with pg_connect() as pg:
+        pg.execute("TRUNCATE staging.raw_sales, staging.raw_hospital_demand, staging.raw_medicine")
+        pg.commit()
+    after_restart = tasks.verify()
+    assert not after_restart["failed"], after_restart
+
     # Publish to the BI schema: complete, equal to the warehouse, repeatable, and atomic.
     from pipeline import publish as pub
 
@@ -120,6 +129,7 @@ def test_validate_gate_stops_a_bad_batch():
 
     with pg_connect() as pg:
         pg.execute("DROP SCHEMA IF EXISTS staging CASCADE")
+        pg.execute("DROP SCHEMA IF EXISTS mart CASCADE")
         pg.commit()
     shutil.rmtree(WORK / "landing", ignore_errors=True)
     tasks.initial_ingest()

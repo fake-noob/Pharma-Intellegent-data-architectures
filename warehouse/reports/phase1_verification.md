@@ -1,6 +1,6 @@
 # Phase 1 verification report
 
-Generated 2026-11-19 14:24 UTC · run `20261119T142420Z-6a3e6a` · **23/23 checks passed**
+Generated 2026-11-21 16:40 UTC · run `20261121T163950Z-95fcc0` · **23/23 checks passed**
 
 ## Warehouse contents
 
@@ -25,8 +25,8 @@ No rejected or warned rows.
 
 | Check | Result | Detail |
 |---|---|---|
-| source_vs_raw[05_pharmacy_sales_data.csv] | PASS | csv rows=500,000 raw rows=500,000; measures compared=8; mismatches=none |
-| source_vs_raw[06_hospital_demand_data.csv] | PASS | csv rows=27,216 raw rows=27,216; measures compared=12; mismatches=none |
+| source_vs_raw[05_pharmacy_sales_data.csv] | PASS | csv rows=500,000 validated staging rows=500,000; measures compared=8; mismatches=none; raw copy was purged by a database restart |
+| source_vs_raw[06_hospital_demand_data.csv] | PASS | csv rows=27,216 validated staging rows=27,216; measures compared=12; mismatches=none; raw copy was purged by a database restart |
 | batch_accounting[1:medicine_master] | PASS | read=63 valid=63 rejected=0 warnings=0 |
 | batch_accounting[2:pharmacy_sales] | PASS | read=500,000 valid=500,000 rejected=0 warnings=0 |
 | batch_accounting[3:hospital_demand] | PASS | read=27,216 valid=27,216 rejected=0 warnings=0 |
@@ -53,7 +53,7 @@ No rejected or warned rows.
 
 ### q1_forecast_vs_consumption_by_class
 
-292.3 ms · 1,764 rows
+51.0 ms · 1,764 rows
 
 | YearMonth | TherapeuticClass | ForecastPacks | ConsumedPacks | VariancePacks | VariancePct | WapePct |
 |---|---|---|---|---|---|---|
@@ -74,7 +74,7 @@ _1,764 rows total; first 12 shown._
 
 ### q1b_largest_forecast_variance_medicines
 
-24.8 ms · 10 rows
+30.6 ms · 10 rows
 
 | MedicineID | GenericName | TherapeuticClass | ForecastPacks | ConsumedPacks | VariancePacks | VariancePct | WapePct |
 |---|---|---|---|---|---|---|---|
@@ -91,7 +91,7 @@ _1,764 rows total; first 12 shown._
 
 ### q2_unfulfilled_demand_hotspots
 
-21.3 ms · 15 rows
+30.2 ms · 15 rows
 
 | HospitalID | HospitalName | MedicineID | GenericName | UnfulfilledPacks | RequestedPacks | ReceivedPacks | RequestFillRatePct | UnfulfilledRatePct | StockoutDays | MonthsWithStockout | WorstMonthServiceLevelPct |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -112,7 +112,7 @@ _15 rows total; first 12 shown._
 
 ### q2b_unfulfilled_by_month
 
-12.6 ms · 36 rows
+19.1 ms · 36 rows
 
 | YearMonth | RequestedPacks | ReceivedPacks | RequestFillRatePct | UnfulfilledPacks | StockoutDays |
 |---|---|---|---|---|---|
@@ -133,7 +133,7 @@ _36 rows total; first 12 shown._
 
 ### q3_sales_vs_hospital_by_medicine_month
 
-86.7 ms · 2,268 rows
+103.8 ms · 2,268 rows
 
 | YearMonth | MedicineID | GenericName | TherapeuticClass | SalesPacks | NetSalesUSD | HospitalForecastPacks | HospitalConsumedPacks | HospitalUnfulfilledPacks |
 |---|---|---|---|---|---|---|---|---|
@@ -154,14 +154,14 @@ _2,268 rows total; first 12 shown._
 
 ### q3b_rising_sales_with_unmet_hospital_demand
 
-63.9 ms · 0 rows
+67.2 ms · 0 rows
 
 | MedicineID | GenericName | TherapeuticClass | PriorPacks | RecentPacks | SalesGrowthPct | RecentUnfulfilledPacks | RecentStockoutDays |
 |---|---|---|---|---|---|---|---|
 
 ### q4_channel_revenue_and_margin
 
-52.2 ms · 9 rows
+54.7 ms · 9 rows
 
 | SalesYear | ChannelGroup | Transactions | PacksSold | PacksReturned | NetSalesUSD | RevenueSharePct | GrossMarginUSD | GrossMarginRatePct |
 |---|---|---|---|---|---|---|---|---|
@@ -177,7 +177,7 @@ _2,268 rows total; first 12 shown._
 
 ### q5_fast_slow_movers
 
-73.6 ms · 20 rows
+75.4 ms · 20 rows
 
 | Mover | MedicineID | GenericName | TherapeuticClass | DiseaseCategory | ColdChainFlag | PacksLast12M | NetSalesLast12M | FastRank | SlowRank | RankInClass |
 |---|---|---|---|---|---|---|---|---|---|---|

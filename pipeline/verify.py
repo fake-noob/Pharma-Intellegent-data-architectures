@@ -28,7 +28,9 @@ from decimal import Decimal
 
 from .config import SQL_DIR, settings
 from .db import duck_connect, pg_connect
+from .ingest import ensure_raw_schema
 from .sources import HOSPITAL_DEMAND, SALES, snake
+from .validate import SPEC_BY_SOURCE
 
 log = logging.getLogger(__name__)
 
@@ -77,27 +79,47 @@ def csv_totals(path, measures: list[str]) -> tuple[int, dict[str, Decimal]]:
 
 
 def check_source_to_raw(pg) -> list[Check]:
+    """Source CSV totals must equal what was staged, batch by batch.
+
+    Compared with the raw staging copy. Raw staging is UNLOGGED (fast bulk loads), so a
+    database crash or an unclean Docker restart empties it; for such a batch the same
+    comparison is made against the validated staging copy when the batch had no
+    rejected rows. With rejected rows the totals legitimately differ, and row accounting
+    is covered by check_batch_accounting.
+    """
     checks = []
     for source, measures in ((SALES, SALES_MEASURES), (HOSPITAL_DEMAND, DEMAND_MEASURES)):
         batches = pg.execute(
-            """SELECT batch_id, file_name, file_path FROM staging.ingest_batch
+            """SELECT batch_id, file_name, file_path, rows_rejected FROM staging.ingest_batch
                WHERE source_name = %s AND status = 'validated' ORDER BY batch_id""",
             (source.name,)).fetchall()
-        for batch_id, file_name, file_path in batches:
+        for batch_id, file_name, file_path, rows_rejected in batches:
+            name = f"source_vs_raw[{file_name}]"
             path = Path(file_path) if file_path else settings.source_dir / file_name
             if not path.is_file():
-                checks.append(Check(f"source_vs_raw[{file_name}]", True,
-                                    "source file no longer present; skipped"))
+                checks.append(Check(name, True, "source file no longer present; skipped"))
                 continue
             n, totals = csv_totals(path, measures)
-            sums = ", ".join(f"sum(staging.try_num(staging.clean({snake(m)})))" for m in measures)
-            row = pg.execute(f"SELECT count(*), {sums} FROM {source.raw_table} WHERE _batch_id = %s",
-                             (batch_id,)).fetchone()
+            raw_rows = pg.execute(f"SELECT count(*) FROM {source.raw_table} WHERE _batch_id = %s",
+                                  (batch_id,)).fetchone()[0]
+            if raw_rows:
+                table, where, label = source.raw_table, "_batch_id", "raw"
+                expr = lambda m: f"sum(staging.try_num(staging.clean({snake(m)})))"  # noqa: E731
+            elif rows_rejected:
+                checks.append(Check(name, True, "raw rows were purged (database restart) and the "
+                                    "batch has rejected rows; row accounting is checked separately"))
+                continue
+            else:
+                table, where, label = SPEC_BY_SOURCE[source.name].table, "batch_id", "validated staging"
+                expr = lambda m: f"sum({snake(m)})"  # noqa: E731
+            row = pg.execute(f"SELECT count(*), {', '.join(expr(m) for m in measures)} "
+                             f"FROM {table} WHERE {where} = %s", (batch_id,)).fetchone()
             mism = [m for m, v in zip(measures, row[1:]) if not _eq(totals[m], v)]
             checks.append(Check(
-                f"source_vs_raw[{file_name}]", n == row[0] and not mism,
-                f"csv rows={n:,} raw rows={row[0]:,}; measures compared={len(measures)}; "
-                f"mismatches={mism or 'none'}"))
+                name, n == row[0] and not mism,
+                f"csv rows={n:,} {label} rows={row[0]:,}; measures compared={len(measures)}; "
+                f"mismatches={mism or 'none'}"
+                + ("; raw copy was purged by a database restart" if label != "raw" else "")))
     return checks
 
 
@@ -314,6 +336,7 @@ def run_verify() -> dict:
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:6]
     queries = load_named_queries()
     with pg_connect() as pg, duck_connect() as duck:
+        ensure_raw_schema(pg)          # upgrades an older staging schema in place (idempotent)
         checks: list[Check] = []
         checks += check_source_to_raw(pg)
         checks += check_batch_accounting(pg)

@@ -1,0 +1,17 @@
+apiVersion: 1
+datasources:
+  - name: Pharma Postgres
+    uid: pharma-pg
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: postgres:5432
+    user: grafana_reader          # read-only login created by `pipeline.publish`
+    isDefault: true
+    editable: false
+    jsonData:
+      database: pharma_staging
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: $GRAFANA_DB_PASSWORD
