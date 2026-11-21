@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS staging.ingest_batch (
     rows_with_warnings BIGINT
 );
 
+-- Where the file was read from (landing/archive path); verification re-reads it.
+ALTER TABLE staging.ingest_batch ADD COLUMN IF NOT EXISTS file_path TEXT;
+ALTER TABLE staging.ingest_batch ADD COLUMN IF NOT EXISTS trigger_type TEXT;  -- initial | watcher | api
+
 -- The same file content is staged at most once per source (idempotent re-runs).
 CREATE UNIQUE INDEX IF NOT EXISTS ux_ingest_batch_file_once
     ON staging.ingest_batch (source_name, file_sha256)

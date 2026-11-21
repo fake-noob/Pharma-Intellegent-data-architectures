@@ -1,4 +1,4 @@
-# Phase 1 local services. Airflow services are added in the orchestration step.
+# Phase 1 local services: Postgres (staging) and Airflow (orchestration).
 services:
   postgres:
     image: postgres:16-alpine  # 16+ required: validation uses pg_input_is_valid()
@@ -25,6 +25,39 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  airflow:
+    build: ./airflow
+    image: pharma-airflow:local
+    container_name: pharma-airflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "/opt/airflow/project/airflow/entrypoint.sh"]
+    environment:
+      # Airflow keeps its metadata in its own database on the shared Postgres.
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER:-pharma}:${PG_PASSWORD:-pharma_dev_password}@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/project/airflow/dags
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__CORE__PARALLELISM: "4"
+      # Pipeline code and settings: same staging database, reached by service name.
+      PYTHONPATH: /opt/airflow/project
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_DB: ${AIRFLOW_PIPELINE_DB:-pharma_staging}
+      PG_USER: ${PG_USER:-pharma}
+      PG_PASSWORD: ${PG_PASSWORD:-pharma_dev_password}
+      # Paths are relative to the project root. Override the AIRFLOW_* variables to rehearse
+      # against a separate database/warehouse without touching the real one.
+      SOURCE_DIR: ${AIRFLOW_SOURCE_DIR:-dataset}
+      LANDING_DIR: ${AIRFLOW_LANDING_DIR:-landing}
+      DUCKDB_PATH: ${AIRFLOW_DUCKDB_PATH:-warehouse/pharma_sdi.duckdb}
+    volumes:
+      - ./:/opt/airflow/project
+    ports:
+      - "8080:8080"
 
 volumes:
   pg_staging_data:

@@ -79,6 +79,21 @@ def generate_refresh(plan: RefreshPlan, seed: int) -> dict:
     return {"refresh": plan.number, "files": files}
 
 
+def run_generate(numbers: list[int], seed: int = DEFAULT_SEED) -> dict:
+    """Generate the given refreshes (in order) and refresh the manifest and dictionary."""
+    manifest_path = OUT_DIR / "generation_manifest.json"
+    previous = {}
+    if manifest_path.is_file():
+        previous = {r["refresh"]: r for r in json.loads(
+            manifest_path.read_text(encoding="utf-8"))["refreshes"]}
+    for number in sorted(numbers):
+        previous[number] = generate_refresh(PLANS[number], seed)
+    manifest = {"seed": seed, "refreshes": [previous[k] for k in sorted(previous)]}
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    dictionary.write(manifest_path, OUT_DIR / "DATA_DICTIONARY.md")
+    return manifest
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -87,18 +102,8 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-    manifest_path = OUT_DIR / "generation_manifest.json"
-    previous = {}
-    if manifest_path.is_file():
-        previous = {r["refresh"]: r for r in json.loads(
-            manifest_path.read_text(encoding="utf-8"))["refreshes"]}
-    for number in sorted(args.refreshes):
-        previous[number] = generate_refresh(PLANS[number], args.seed)
-    manifest = {"seed": args.seed, "refreshes": [previous[k] for k in sorted(previous)]}
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    dictionary.write(manifest_path, OUT_DIR / "DATA_DICTIONARY.md")
-    log.info("wrote %s and DATA_DICTIONARY.md", manifest_path)
+    run_generate(args.refreshes, args.seed)
+    log.info("wrote generation_manifest.json and DATA_DICTIONARY.md in %s", OUT_DIR)
 
 
 if __name__ == "__main__":

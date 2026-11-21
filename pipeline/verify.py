@@ -22,6 +22,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -79,11 +80,11 @@ def check_source_to_raw(pg) -> list[Check]:
     checks = []
     for source, measures in ((SALES, SALES_MEASURES), (HOSPITAL_DEMAND, DEMAND_MEASURES)):
         batches = pg.execute(
-            """SELECT batch_id, file_name FROM staging.ingest_batch
+            """SELECT batch_id, file_name, file_path FROM staging.ingest_batch
                WHERE source_name = %s AND status = 'validated' ORDER BY batch_id""",
             (source.name,)).fetchall()
-        for batch_id, file_name in batches:
-            path = settings.source_dir / file_name
+        for batch_id, file_name, file_path in batches:
+            path = Path(file_path) if file_path else settings.source_dir / file_name
             if not path.is_file():
                 checks.append(Check(f"source_vs_raw[{file_name}]", True,
                                     "source file no longer present; skipped"))
@@ -199,6 +200,11 @@ def check_no_multiplication(duck, q3_sql: str) -> list[Check]:
     fact_consumed, fact_unfulfilled = duck.execute(
         "SELECT sum(ConsumedQuantityPacks), sum(UnfulfilledDemandPacks) FROM fact_hospital_demand"
     ).fetchone()
+    if not fact_sales_packs or not fact_consumed:
+        return [Check("cross_fact_no_multiplication[q3]", False,
+                      "fact tables are empty (sales rows loaded: "
+                      f"{'yes' if fact_sales_packs else 'no'}, hospital demand rows loaded: "
+                      f"{'yes' if fact_consumed else 'no'}); nothing to compare")]
     q_sales, q_net, q_consumed, q_unf = duck.execute(f"""
         SELECT sum(SalesPacks), sum(NetSalesUSD), sum(HospitalConsumedPacks),
                sum(HospitalUnfulfilledPacks) FROM ({q3_sql})""").fetchone()

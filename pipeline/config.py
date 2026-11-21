@@ -35,8 +35,14 @@ class Settings:
     pg_user: str = os.environ.get("PG_USER", "pharma")
     pg_password: str = os.environ.get("PG_PASSWORD", "pharma_dev_password")
     duckdb_path: Path = REPO_ROOT / os.environ.get("DUCKDB_PATH", "warehouse/pharma_sdi.duckdb")
-    # Directory watched for source files. New refresh files are dropped here too.
+    # Initial extract: loaded once by `python -m pipeline.run_phase1 ingest`.
     source_dir: Path = REPO_ROOT / os.environ.get("SOURCE_DIR", "dataset")
+    # Landing zone: new files arrive here (dropped, or uploaded through the API) and
+    # are picked up by the file watcher; processed files move to archive/ or failed/.
+    landing_dir: Path = REPO_ROOT / os.environ.get("LANDING_DIR", "landing")
+    watch_poll_seconds: float = float(os.environ.get("WATCH_POLL_SECONDS", "5"))
+    # A file is read only after its size has been unchanged for this many polls.
+    watch_stable_polls: int = int(os.environ.get("WATCH_STABLE_POLLS", "2"))
     work_dir: Path = REPO_ROOT / os.environ.get("WORK_DIR", "warehouse/tmp")
     report_dir: Path = REPO_ROOT / os.environ.get("REPORT_DIR", "warehouse/reports")
     chunk_rows: int = int(os.environ.get("INGEST_CHUNK_ROWS", "100000"))

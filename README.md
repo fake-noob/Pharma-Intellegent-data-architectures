@@ -45,18 +45,61 @@ column-level rules are in [oversampled/DATA_DICTIONARY.md](oversampled/DATA_DICT
 .venv/Scripts/python tests/test_generator.py     # check them against the source data's rules
 ```
 
-To refresh the warehouse, copy a refresh folder's files into `dataset/` and run the
-pipeline again; the new rows are added to the existing history.
+### Landing zone: file watcher and ingestion API
+
+New files arrive in `landing/` and are staged automatically. Processed files move to
+`landing/archive/`; files that fail ingestion move to `landing/failed/`.
+
+```bash
+.venv/Scripts/python -m pipeline.watcher                       # watch continuously
+.venv/Scripts/python -m pipeline.watcher --once                # process what is there, then exit
+.venv/Scripts/python -m uvicorn pipeline.api:app --port 8000   # HTTP API, docs at /docs
+
+curl -T oversampled/refresh1/05_pharmacy_sales_data_refresh1.csv      http://localhost:8000/files/05_pharmacy_sales_data_refresh1.csv   # upload to the landing zone
+curl http://localhost:8000/batches                                     # batch metrics
+```
+
+A refresh then runs as: put the files in `landing/` (or upload them), let the watcher stage
+them (or `python -m pipeline.run_phase1 landing`), then
+`python -m pipeline.run_phase1 validate mart verify`. New rows are added to the existing history.
+
+### Airflow orchestration
+
+Airflow runs the pipeline as DAGs (web UI at http://localhost:8080, login `admin` / `admin`):
+
+| DAG | Tasks | Use |
+|---|---|---|
+| `sdi_initial_load` | ingest, validate, load, verify | Once on a fresh checkout (about 8 minutes) |
+| `sdi_refresh` | generate, deliver, stage, validate, load, verify | One new batch of data; parameter `refresh_number` = 1 or 2 |
+
+```bash
+docker compose build airflow            # first time (pulls the Airflow image: use mirror.gcr.io if Docker Hub times out)
+docker compose up -d postgres airflow   # Postgres + Airflow
+# In the UI: sdi_refresh > Trigger DAG w/ config > refresh_number 1. Or from the shell:
+docker exec pharma-airflow airflow dags trigger sdi_refresh -c '{"refresh_number": 1}'
+```
+
+Each task is one function in `pipeline/tasks.py`; the DAG files only wire them together. The
+warehouse-writing tasks share a one-slot `warehouse` pool because DuckDB allows one writer, so
+do not run `python -m pipeline.run_phase1 mart` on the host while Airflow is loading.
+To rehearse without touching the real warehouse, set `AIRFLOW_PIPELINE_DB`, `AIRFLOW_SOURCE_DIR`,
+`AIRFLOW_LANDING_DIR` and `AIRFLOW_DUCKDB_PATH` before `docker compose up -d airflow`.
 
 ### Layout
 
 | Path | Purpose |
 |---|---|
 | `pipeline/ingest.py` | Chunked CSV → `staging.raw_*`, batch metrics |
+| `pipeline/tasks.py` | One function per Airflow task (generate, deliver, stage, validate, load, verify) |
+| `airflow/` | Dockerfile, startup script and the two DAGs |
+| `pipeline/watcher.py` | Landing-zone file watcher (waits for files to finish copying; archives or fails them) |
+| `pipeline/api.py` | HTTP ingestion API: upload, process, list batches |
 | `pipeline/validate.py` | Strict typing, reject/warn rules → `staging.stg_*` |
 | `pipeline/mart.py` | SCD2/junk dimensions, facts, aggregates (DuckDB) |
 | `pipeline/verify.py` | Reconciliation checks + analysis queries |
 | `pipeline/generate/` | Oversampling: generates refresh files and the data dictionary |
 | `pipeline/sql/` | Staging DDL, mart DDL, serving views, analysis queries |
 | `tests/test_generator.py` | Checks generated files against the source data's identities and relationships |
+| `tests/test_tasks.py` | Dress rehearsal of the DAG: two refreshes through the task chain, idempotency, quality gate |
+| `tests/test_watcher_api.py` | Watcher lifecycle, partial files, duplicates, locking and API upload rules |
 | `tests/test_pipeline_negative.py` | Bad-data, idempotency and SCD2 integration test (uses a separate `pharma_test` DB) |

@@ -11,3 +11,9 @@ __pycache__/
 warehouse/*.duckdb
 warehouse/*.duckdb.wal
 warehouse/tmp/
+
+# Landing zone for incoming files (contents are transient)
+landing/
+
+# Rehearsal runs (separate database/warehouse for testing the DAGs)
+warehouse/rehearsal/

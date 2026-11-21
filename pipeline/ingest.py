@@ -73,7 +73,8 @@ def _already_staged(conn: psycopg.Connection, source: Source, digest: str) -> in
     return row[0] if row else None
 
 
-def ingest_file(conn: psycopg.Connection, source: Source, path: Path) -> dict:
+def ingest_file(conn: psycopg.Connection, source: Source, path: Path,
+                trigger: str = "initial") -> dict:
     """Stage one file as one batch. Returns the batch metrics."""
     started = time.perf_counter()
     digest = sha256_of(path)
@@ -84,11 +85,12 @@ def ingest_file(conn: psycopg.Connection, source: Source, path: Path) -> dict:
         row = conn.execute(
             """INSERT INTO staging.ingest_batch
                    (source_name, file_name, file_sha256, file_size_bytes, finished_at,
-                    duration_seconds, rows_read, rows_loaded, status, error_message)
-               VALUES (%s, %s, %s, %s, now(), %s, 0, 0, 'skipped_duplicate', %s)
+                    duration_seconds, rows_read, rows_loaded, status, error_message,
+                    file_path, trigger_type)
+               VALUES (%s, %s, %s, %s, now(), %s, 0, 0, 'skipped_duplicate', %s, %s, %s)
                RETURNING batch_id""",
             (source.name, path.name, digest, size, round(time.perf_counter() - started, 3),
-             f"identical content already staged as batch {existing}"),
+             f"identical content already staged as batch {existing}", str(path), trigger),
         ).fetchone()
         conn.commit()
         log.info("%s: %s already staged (batch %s); skipped", source.name, path.name, existing)
@@ -98,9 +100,9 @@ def ingest_file(conn: psycopg.Connection, source: Source, path: Path) -> dict:
     # Record the attempt first so a failure still shows up in batch metrics.
     batch_id = conn.execute(
         """INSERT INTO staging.ingest_batch
-               (source_name, file_name, file_sha256, file_size_bytes, status)
-           VALUES (%s, %s, %s, %s, 'running') RETURNING batch_id""",
-        (source.name, path.name, digest, size),
+               (source_name, file_name, file_sha256, file_size_bytes, status, file_path, trigger_type)
+           VALUES (%s, %s, %s, %s, 'running', %s, %s) RETURNING batch_id""",
+        (source.name, path.name, digest, size, str(path), trigger),
     ).fetchone()[0]
     conn.commit()
 
@@ -118,9 +120,11 @@ def ingest_file(conn: psycopg.Connection, source: Source, path: Path) -> dict:
             if header != expected:
                 missing = [c for c in expected if c not in header]
                 extra = [c for c in header if c not in expected]
+                shown = lambda cols: ", ".join(cols[:4]) + (f" (+{len(cols) - 4} more)" if len(cols) > 4 else "")  # noqa: E731
                 raise ValueError(
-                    f"header mismatch for {path.name}: missing={missing} extra={extra} "
-                    f"(order must match the source specification)"
+                    f"header mismatch for {path.name}: expected {ncols} columns, found {len(header)}; "
+                    f"missing: {shown(missing) or 'none'}; unexpected: {shown(extra) or 'none'}"
+                    + ("" if missing or extra else "; same columns in a different order")
                 )
             chunk: list[tuple] = []
             bad: list[tuple] = []
@@ -177,6 +181,13 @@ def ingest_file(conn: psycopg.Connection, source: Source, path: Path) -> dict:
             "chunks": chunks, "duration_seconds": duration}
 
 
+def set_file_path(conn: psycopg.Connection, batch_id: int, path: Path) -> None:
+    """Point a batch at the file's final location (after the watcher archives it)."""
+    conn.execute("UPDATE staging.ingest_batch SET file_path = %s WHERE batch_id = %s",
+                 (str(path), batch_id))
+    conn.commit()
+
+
 def _copy_chunk(conn: psycopg.Connection, copy_sql: str, rows: list[tuple]) -> int:
     with conn.cursor() as cur, cur.copy(copy_sql) as copy:
         for r in rows:
@@ -195,5 +206,5 @@ def run_ingest(sources: tuple[Source, ...] = PHASE1_SOURCES) -> list[dict]:
                 log.warning("%s: no files matching %s in %s", source.name, source.file_glob,
                             settings.source_dir)
             for path in files:
-                results.append(ingest_file(conn, source, path))
+                results.append(ingest_file(conn, source, path, trigger="initial"))
     return results

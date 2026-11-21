@@ -476,6 +476,111 @@ four are Phase 2 and 3 work and plug into the same structure. A master
 change must load before the facts that depend on it; the mart does this
 within a run (dimensions before facts).
 
+### 17. Landing zone, file watcher and ingestion API
+
+**Decision:** New files arrive in a landing zone (`landing/`, `LANDING_DIR`)
+instead of being mixed into `dataset/`, which stays the one-time initial
+extract. `pipeline/watcher.py` stages whatever lands there; `pipeline/api.py`
+is an HTTP front door that puts files into the same landing zone.
+
+- **Watcher lifecycle:** a file is read only after its size and modification
+  time have been unchanged for more than `WATCH_STABLE_POLLS` polls (default 2
+  polls of 5 s), so a half-copied file is never ingested. It is ingested as one
+  batch, then moved to `archive/<batch>_<name>`; if ingestion fails it moves to
+  `failed/` and the batch is marked `failed`. Files that match no Phase 1 name
+  pattern, names starting with `.` and `*.part` are left alone.
+- **Polling, not OS file events:** no extra dependency, and it behaves the same
+  on Windows and on Docker bind mounts, where file-system events are unreliable.
+- **One processor at a time:** a Postgres advisory lock keeps the watcher, the
+  API's `/process` call and Airflow from processing the landing zone together.
+  The existing unique-hash rule already prevents loading the same content twice.
+- **API:** `PUT /files/{name}` streams an upload to `landing/.incoming/` and
+  renames it into place only when complete (202 Accepted); it rejects names
+  that match no source pattern, path tricks, duplicates already waiting (409),
+  empty bodies, oversized files (500 MB default) and any file whose header is not
+  exactly the source's column list (422). `POST /process` stages the landing
+  zone now, `GET /batches` returns recent batch metrics (duration, rows,
+  status), `GET /sources` lists expected columns, `GET /health` checks Postgres.
+  The API never loads data itself, so every route produces the same batch
+  records. It has no authentication: local development only.
+- **Batch records** now carry `file_path` (verification re-reads the archived
+  file) and `trigger_type` (`initial`, `watcher`). Existing databases are
+  upgraded in place by the staging DDL.
+- **Header errors** report counts and the first few differing columns instead of
+  all 41 names, because they are stored in the batch table the dashboards read.
+
+**Why:** The project plan requires an ingestion API and an automated Python
+file watcher feeding staging, with batch metrics. Separating landing from
+history lets the demo show new files arriving and being consumed.
+
+**Verified (2026-11-21):** `tests/test_watcher_api.py` (growing files, unknown
+and hidden files, bad header, duplicate content, two processors, every API
+rule) passes, and a live run with the watcher and API as separate processes
+staged a master file and the 21 MB sales file uploaded through the API and a
+hospital file dropped in slowly: 63, 48,600 and 2,268 rows, all archived.
+
+**Limits:** CSV only (no Excel); the API and watcher run on the host, not yet
+in Docker; the 5 s poll plus two stable polls means a dropped file is staged
+roughly 10-15 s after it finishes copying.
+
+### 18. Airflow orchestration
+
+**Decision:** Airflow 2.10 runs the pipeline as two DAGs in one Docker container
+(`pharma-airflow`: scheduler plus web UI, LocalExecutor) next to the existing
+Postgres. Its metadata lives in a separate `airflow` database on the same
+Postgres server, created by `airflow/entrypoint.sh` on first start.
+
+- **`sdi_refresh`** (parameter `refresh_number`, 1 or 2; manual trigger):
+  `generate_data -> deliver_files -> stage_files -> validate_batches ->
+  load_warehouse -> verify_warehouse`. `sdi_initial_load`: `ingest_extract ->
+  validate -> load -> verify`, run once on a fresh checkout.
+- **Thin DAGs, testable steps:** each task calls one function in
+  `pipeline/tasks.py`, which returns a JSON summary (its XCom) and raises when
+  the pipeline must stop. The same functions run from a test or a shell.
+- **Gates:** `stage` fails on any file that fails ingestion; `validate` fails
+  when more than 1% of a batch's rows are rejected (`DQ_MAX_REJECT_RATE`);
+  `verify` fails on any reconciliation check. A bad batch therefore never
+  reaches the next layer.
+- **Single writer:** the warehouse-writing tasks use a one-slot Airflow pool
+  `warehouse`, because DuckDB allows one writer. `max_active_runs=1` per DAG.
+- **Idempotent:** generation reuses existing files, a re-delivered identical
+  file is recorded as `skipped_duplicate`, and validation and loading only handle
+  new batches, so re-running a refresh adds nothing.
+- **Shared state:** Airflow uses the same staging database and the same DuckDB
+  file as the command line (the project folder is mounted into the container),
+  so the original 500,000-row load is reused rather than repeated. Retries: 1,
+  after 30 s. Login `admin` / `admin` (local development only).
+- **Rehearsal mode:** `AIRFLOW_PIPELINE_DB`, `AIRFLOW_SOURCE_DIR`,
+  `AIRFLOW_LANDING_DIR` and `AIRFLOW_DUCKDB_PATH` point Airflow at a separate
+  database and warehouse, so the DAGs can be tested without consuming the
+  refreshes that the live demo needs.
+
+**Why:** The plan requires Airflow as the central orchestrator with modular DAG
+files and clean task separation, and refreshes that add new data to history.
+
+**Verified (2026-11-21):** In the container, with a rehearsal database,
+`sdi_initial_load`'s first three tasks and then `sdi_refresh` for refresh 1,
+refresh 2 and a repeat of refresh 1 all ran to success. The result was 97,200
+sales rows, 4,536 demand rows, six months of sales, 68 medicine versions (5
+closed), and two `skipped_duplicate` batches for the repeat. The same task chain
+is covered without Airflow by `tests/test_tasks.py`. The rehearsal database was
+dropped afterwards and the container restored to the real configuration with a
+clean run history.
+
+**Bug found and fixed:** `verify` crashed with a `TypeError` when the fact
+tables were empty (for example an initial load that rejected everything). It
+now reports a failed `cross_fact_no_multiplication` check instead.
+
+**Limits:** the initial-load DAG's final verify task was not run to success in
+the rehearsal, because the rehearsal extract held only the medicine master (it
+fails by design on an empty warehouse); its other three tasks ran, and the full
+initial load is covered by the earlier command-line run. In the container, the
+warehouse load of one refresh takes about 80 s, versus seconds on the host,
+because DuckDB writes to a Windows bind mount; moving the DuckDB file to a
+Docker volume would speed it up but hide it from the host. Airflow was run on
+the host's Docker only; no scheduling is configured (refreshes are triggered
+on demand, as the demo needs).
+
 ## Progress log
 
 ### 2026-11-18 — Project plan and source data reviewed
@@ -609,11 +714,27 @@ Deliverables as listed for Milestone 1 (SDI DWH), checked against the repository
 | 1 | `Milestone.1.SDI.DWH.Report` (PDF, max 5 pages: Airflow design, problems and solutions, data engineering dashboards, DWH approach, oversampling strategy) | Owner: team member (written outside this repository). Material for it: decisions 11-16 and the progress log |
 | 2 | `Milestone.1.SDI.DWH.Excel` | Workbook exists as `DWH.Template.Part.1.xlsx`; rename for submission; competitor/case-study fields still empty |
 | 3 | `Milestone.1.SDI.DWH.Video` (max 5 min) | Owner: team member; record after the pipeline runs end to end |
-| 4 | All code, including Airflow | Pipeline, generator and tests done; Airflow DAG, file watcher and ingestion API not built |
+| 4 | All code, including Airflow | Pipeline, generator, file watcher, ingestion API, Airflow DAGs and tests done |
 | 5 | Oversampled data folder with data dictionary | Done: `oversampled/` (decision 16) |
 
 Also required by the plan and not yet built: the batch-ingestion, storage and
 query-performance dashboards, the BI dashboard, and two demonstrated refreshes.
+
+### 2026-11-21 — Landing zone, watcher and API built
+
+- Added `pipeline/watcher.py`, `pipeline/api.py`, the `landing` CLI step,
+  `tests/test_watcher_api.py`; batch records gained `file_path` and
+  `trigger_type` (decision 17). All three test suites pass (10 tests).
+- Installed FastAPI, uvicorn and httpx into the venv (`requirements.txt`).
+
+### 2026-11-21 — Airflow DAGs built and rehearsed
+
+- Added `airflow/` (Dockerfile, entrypoint, two DAGs), `pipeline/tasks.py`,
+  `tests/test_tasks.py` and the `airflow` compose service (decision 18).
+  The 2.13 GB Airflow image was pulled through `mirror.gcr.io`; building our
+  image on top took about 8 minutes because of slow PyPI downloads.
+- Rehearsed both refreshes in Airflow against a separate database, then
+  restored the real configuration. Fixed an empty-warehouse crash in `verify`.
 
 ## Open decisions and next steps
 
@@ -622,11 +743,12 @@ query-performance dashboards, the BI dashboard, and two demonstrated refreshes.
    level) separately from the request fill rate (decision 14).
 2. Research competitor comparisons and documented case studies, adding credible
    citations before completing those fields.
-3. **Airflow orchestration (next):** add Airflow services to
+3. ~~Airflow orchestration~~ done (decision 18); original wording kept for reference: add Airflow services to
    `docker-compose.yml` and a modular DAG (generate → watch/ingest → validate →
    mart → verify) calling the `pipeline` functions, plus the file watcher and
-   ingestion API from the project plan. Decide where refresh files land: the
-   pipeline currently reads `dataset/` (`SOURCE_DIR`).
+   ingestion API from the project plan. (Watcher, API and landing zone are done:
+   decision 17; the DAG calls `process_landing()` after copying the generated
+   files into `landing/`.)
 4. ~~Data generator~~ done (decision 16). Remaining: the 1-2 page PDF on the
    generation methodology and statistics (worth 2%), written from
    `oversampled/DATA_DICTIONARY.md` and `generation_manifest.json`.

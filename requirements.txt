@@ -4,3 +4,7 @@ psycopg[binary]>=3.2
 # Data generator (oversampling) and its tests
 pandas>=2.2
 numpy>=1.26
+# Ingestion API and its tests
+fastapi>=0.110
+uvicorn>=0.29
+httpx>=0.27
