@@ -1,6 +1,6 @@
 # Project Decisions and Progress Log
 
-Last updated: 2026-11-19
+Last updated: 2026-11-21
 
 This log records the project decisions made so far, why they were chosen, and
 what remains to be done. Decisions marked as proposed or pending are not final.
@@ -415,6 +415,67 @@ checked against the mart before being recorded.
   now month × medicine (2,268 rows), matching `agg_sales_month`.
   Hospital-level views read the fact directly.
 
+### 16. Oversampling (data generator) design
+
+**Decision:** `pipeline/generate/` produces two refresh batches of new data
+for the Phase 1 sources, each for a different quarter (refresh 1 = 2026 Q1,
+refresh 2 = 2026 Q2), written to `oversampled/refresh<N>/` using the file
+names the ingestion patterns already match. The folder also holds
+`DATA_DICTIONARY.md` (column-level rules, generated from the validation specs
+so it cannot drift) and `generation_manifest.json` (row counts and totals).
+
+- **Volume:** each refresh is one quarter of 2025 volume (180,000 sales rows)
+  grown 8%, the mean of the observed 6.5% and 9.1% yearly growth: 48,600
+  sales rows and 2,268 hospital-demand rows (756 per month). That is about 10%
+  of the original data per refresh, so a live refresh runs in a few minutes
+  while still moving every dashboard. New rows are added to the existing
+  warehouse; nothing is replaced.
+- **Sales method:** a bootstrap of real sales since 2024-07 in whole
+  pharmacy-delivery blocks (367 deliveries of about 132 sales, as observed),
+  with new transaction/delivery/prescription IDs and dates inside the window
+  using the historical weekday mix. Only lots expiring at least 30 days after
+  the window are sold. Amounts are recomputed from master prices with the
+  source's own rules: discount by promotion code (5/5/8/10%), 6% tax, cost =
+  quantity × wholesale price. Measured against all 500,000 historical rows,
+  gross, cost and unit price reproduce exactly, discount on 99.996% and tax
+  on 99.93% (one-cent differences on exact-half values, because the source
+  rounds with Python float `round()`); the pipeline's reconciliation rules
+  hold exactly.
+- **Hospital method:** simulated month by month. Forecast = same month last
+  year × 1.03 × noise; request/approval/receipt ratios are drawn jointly from
+  real non-stockout rows; stock chains (opening = previous closing, the first
+  generated month continues from the last real month), so stockouts and
+  unfulfilled demand arise from stock levels. The source's identities hold on
+  every row: closing = opening + received − dispensed − wastage; service level
+  = 1 − unfulfilled / (dispensed + unfulfilled); "Partially fulfilled" exactly
+  on stockout rows.
+- **Master change:** refresh 2 includes `01_master_data_refresh2.csv` with a
+  5% retail and wholesale price rise for 5 medicines (MED001, MED034, MED039,
+  MED041, MED053) effective 2026-04-01, with `EffectiveFromDate` advanced as
+  decision 13 requires. This exercises SCD Type 2 in the demo.
+- **Reproducible:** a fixed seed (20261) regenerates identical files
+  (verified byte for byte).
+
+**Why:** The plan requires data generated for every refresh, over different
+periods, added to history. Resampling real rows keeps pharmacy, medicine and
+channel mixes realistic, and rule-based hospital simulation keeps its internal
+accounting consistent.
+
+**Verified (2026-11-21):** `tests/test_generator.py` checks the generated
+files against the source's rules, and the files were run through the real
+pipeline in the test database: 6 batches, 0 rejected rows, 0 warnings, all
+28 verification checks pass. Q1 sales resolve to the old price version
+(MED001 $2.90) and Q2 sales to the new one ($3.04); no sale carries a price
+different from its dimension version.
+
+**Limits:** Net sales per row differs between the two refreshes ($12.19 vs
+$10.19), and quarterly net sales by $592k vs $495k, because each delivery is a
+single medicine and a quarter holds only about 367 of them; the source has
+the same burstiness. Only the three Phase 1 sources are generated; the other
+four are Phase 2 and 3 work and plug into the same structure. A master
+change must load before the facts that depend on it; the mart does this
+within a run (dimensions before facts).
+
 ## Progress log
 
 ### 2026-11-18 — Project plan and source data reviewed
@@ -527,6 +588,33 @@ checked against the mart before being recorded.
   and two demonstrated refreshes (see next steps below). The project is on
   track against the extended dates.
 
+### 2026-11-21 — Data generator built and verified
+
+- Added `pipeline/generate/` (sales, hospital demand, master changes,
+  dictionary, CLI) and `tests/test_generator.py`; generated
+  `oversampled/` (about 43 MB, tracked by Git LFS as CSV).
+- Generator output ran through ingest, validation, mart and verification
+  with no rejects or warnings, and the repriced medicines were versioned
+  correctly (decision 16). Generation takes about 16 s per refresh.
+- Docker Desktop was not running after a restart; the Postgres container and
+  its data volume came back intact with `docker compose up -d postgres`.
+
+### Milestone 1 deliverables checklist (status 2026-11-21)
+
+Deliverables as listed for Milestone 1 (SDI DWH), checked against the repository:
+
+| # | Deliverable | Status |
+|---|---|---|
+| 0 | Text file with the group's GitHub profile link; member information on the GitHub page | Not done: needs member names (README has no members section) |
+| 1 | `Milestone.1.SDI.DWH.Report` (PDF, max 5 pages: Airflow design, problems and solutions, data engineering dashboards, DWH approach, oversampling strategy) | Owner: team member (written outside this repository). Material for it: decisions 11-16 and the progress log |
+| 2 | `Milestone.1.SDI.DWH.Excel` | Workbook exists as `DWH.Template.Part.1.xlsx`; rename for submission; competitor/case-study fields still empty |
+| 3 | `Milestone.1.SDI.DWH.Video` (max 5 min) | Owner: team member; record after the pipeline runs end to end |
+| 4 | All code, including Airflow | Pipeline, generator and tests done; Airflow DAG, file watcher and ingestion API not built |
+| 5 | Oversampled data folder with data dictionary | Done: `oversampled/` (decision 16) |
+
+Also required by the plan and not yet built: the batch-ingestion, storage and
+query-performance dashboards, the BI dashboard, and two demonstrated refreshes.
+
 ## Open decisions and next steps
 
 1. Validate the business requirements and candidate KPI definitions with the
@@ -535,12 +623,13 @@ checked against the mart before being recorded.
 2. Research competitor comparisons and documented case studies, adding credible
    citations before completing those fields.
 3. **Airflow orchestration (next):** add Airflow services to
-   `docker-compose.yml` and a modular DAG (sensor → ingest → validate → mart →
-   verify) calling the `pipeline` functions; add the data generator task for
-   refresh files.
-4. Data generator: produce refresh files that match the patterns in
-   `pipeline/sources.py`, extending dates beyond 2025-12. Any medicine master
-   change must advance `EffectiveFromDate` (decision 13).
+   `docker-compose.yml` and a modular DAG (generate → watch/ingest → validate →
+   mart → verify) calling the `pipeline` functions, plus the file watcher and
+   ingestion API from the project plan. Decide where refresh files land: the
+   pipeline currently reads `dataset/` (`SOURCE_DIR`).
+4. ~~Data generator~~ done (decision 16). Remaining: the 1-2 page PDF on the
+   generation methodology and statistics (worth 2%), written from
+   `oversampled/DATA_DICTIONARY.md` and `generation_manifest.json`.
 5. BI dashboard on the DuckDB views and aggregates, plus the DE observability
    dashboards from `staging.ingest_batch`, `staging.dq_issue` and
    `etl_query_log`. Demonstrate two refreshes.

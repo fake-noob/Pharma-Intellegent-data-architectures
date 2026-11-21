@@ -1,3 +1,6 @@
 # Phase 1 pipeline runtime (Python 3.11+)
 duckdb>=1.1
 psycopg[binary]>=3.2
+# Data generator (oversampling) and its tests
+pandas>=2.2
+numpy>=1.26

@@ -1,0 +1,77 @@
+{
+  "seed": 20261,
+  "refreshes": [
+    {
+      "refresh": 1,
+      "files": [
+        {
+          "file": "05_pharmacy_sales_data_refresh1.csv",
+          "rows": 48600,
+          "size_mb": 21.21,
+          "period": "2026-01-01 to 2026-03-31",
+          "deliveries": 367,
+          "quantity_sold_packs": 57641,
+          "net_sales_usd": 592431.54,
+          "rows_by_month": {
+            "2026-01": 14026,
+            "2026-02": 14993,
+            "2026-03": 19581
+          }
+        },
+        {
+          "file": "06_hospital_demand_data_refresh1.csv",
+          "rows": 2268,
+          "size_mb": 0.73,
+          "period": "2026-01-01 to 2026-03-01",
+          "forecast_packs": 514248,
+          "consumed_packs": 518006,
+          "unfulfilled_packs": 528,
+          "stockout_rows": 17
+        }
+      ]
+    },
+    {
+      "refresh": 2,
+      "files": [
+        {
+          "file": "01_master_data_refresh2.csv",
+          "rows": 63,
+          "size_mb": 0.02,
+          "period": "effective 2026-04-01",
+          "changed_medicines": [
+            "MED001",
+            "MED034",
+            "MED039",
+            "MED041",
+            "MED053"
+          ],
+          "price_change_pct": 5.0
+        },
+        {
+          "file": "05_pharmacy_sales_data_refresh2.csv",
+          "rows": 48600,
+          "size_mb": 21.25,
+          "period": "2026-04-01 to 2026-06-30",
+          "deliveries": 367,
+          "quantity_sold_packs": 57747,
+          "net_sales_usd": 495448.9,
+          "rows_by_month": {
+            "2026-04": 13995,
+            "2026-05": 15966,
+            "2026-06": 18639
+          }
+        },
+        {
+          "file": "06_hospital_demand_data_refresh2.csv",
+          "rows": 2268,
+          "size_mb": 0.73,
+          "period": "2026-04-01 to 2026-06-01",
+          "forecast_packs": 471681,
+          "consumed_packs": 475781,
+          "unfulfilled_packs": 391,
+          "stockout_rows": 14
+        }
+      ]
+    }
+  ]
+}
