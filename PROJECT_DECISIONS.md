@@ -727,6 +727,37 @@ no per-point labels (hover shows values); the "rising sales with unmet hospital 
 (query q3b) returns no medicines on the supplied data, so it has no panel; the cold-chain slice
 has only three medicines, so conclusions about it are anecdotal.
 
+### 22. Workbook finalised for submission (Milestone.1.SDI.DWH.Excel.xlsx)
+
+**Done 2026-11-21:** the design workbook was renamed to the submission name and its last open
+cells were completed. The edit was made directly in the sheet XML, so all formatting is
+unchanged; a cell-by-cell comparison with the previous version shows only these cells differ.
+
+- **Competitors (Business.Req.XRay C6) and case studies (C7):** researched from sources that
+  were read in full, not from search snippets. No source publishes a direct competitor's
+  data-warehouse performance, so C6 compares documented organisations with and without integrated
+  supply-chain data: PHCC Qatar (enterprise data warehouse; back-order rate 6.7% to 4.5%, shelf
+  life 551 to 568 days, returns 3% to 2%, but on-time delivery unchanged at 44% and the authors
+  state there is no statistical evaluation or control case), an unnamed multinational drug maker
+  (Deloitte manufacturing data lake: 75% less time to insight, 85% less manual effort; baseline
+  not stated), Novartis (EY/SAP slow-moving inventory model: at least 50% less provisioning
+  effort; baseline not stated), and the Ethiopian public supply chain as a comparator without
+  integrated data (qualitative, 17 interviews). C7 summarises the three architectures and how they
+  relate to this project, with a numbered source list (accessed 2026-11-21). Figures are as
+  reported by each source and none is independently audited; this is stated in the cell.
+- **Excluded on purpose:** an HCLTech pharmacy-chain case that appeared in search results could
+  not be loaded for reading (the connection failed twice), so none of its figures is used.
+- **Stakeholders (C5) and KPI notes (C10):** the "confirm with the team" hedges were replaced by
+  what was verified on the supplied data: net sales is gross less discount and is not reduced for
+  returns, and the source ServiceLevelPct equals 1 - unfulfilled / (dispensed + unfulfilled),
+  which differs from the request fill rate (decision 14). The two comments on net sales in
+  Transform.OLTP and Fact.Table now say the same.
+- **Known differences between the workbook and the database:** the workbook is the logical design.
+  The implementation adds technical columns not listed in it: `MonthStartDateKey` on Dim_Date;
+  `RowHash` and `SourceBatchID` on the Type 2 dimensions; `SourceBatchID` and `LoadedAtUTC` on both
+  facts (see `pipeline/sql/mart_ddl.sql`). The Star.Schema sheet holds a text diagram, not a drawn
+  image.
+
 ## Progress log
 
 ### 2026-11-18 — Project plan and source data reviewed
@@ -858,7 +889,7 @@ Deliverables as listed for Milestone 1 (SDI DWH), checked against the repository
 |---|---|---|
 | 0 | Text file with the group's GitHub profile link; member information on the GitHub page | Not done: needs member names (README has no members section) |
 | 1 | `Milestone.1.SDI.DWH.Report` (PDF, max 5 pages: Airflow design, problems and solutions, data engineering dashboards, DWH approach, oversampling strategy) | Owner: team member (written outside this repository). Material for it: decisions 11-16 and the progress log |
-| 2 | `Milestone.1.SDI.DWH.Excel` | Workbook exists as `DWH.Template.Part.1.xlsx`; rename for submission; competitor/case-study fields still empty |
+| 2 | `Milestone.1.SDI.DWH.Excel` | Done: `Milestone.1.SDI.DWH.Excel.xlsx` (renamed from the template); all sheets complete, including the cited competitor and case-study research (decision 22) |
 | 3 | `Milestone.1.SDI.DWH.Video` (max 5 min) | Owner: team member; record after the pipeline runs end to end |
 | 4 | All code, including Airflow | Pipeline, generator, file watcher, ingestion API, Airflow DAGs and tests done |
 | 5 | Oversampled data folder with data dictionary | Done: `oversampled/` (decision 16) |
@@ -873,7 +904,8 @@ Also required by the plan (status 2026-11-21, after the dashboards were built):
 | Two demonstrated refreshes with the dashboards changing | Not yet run on the real warehouse; the DAGs were rehearsed in Airflow on a throwaway database before the publish step and dashboards existed, so an end-to-end rehearsal is still needed |
 | Streaming ingestion dashboard | Not built: it belongs to the IoT stream (Phase 3); confirm with the instructor whether Milestone 1 needs it |
 | Excel (.xlsx) ingestion | Not built: the supplied Phase 1 sources are CSV; confirm with the instructor |
-| Workbook competitor / case-study fields; GitHub link file; group members on the GitHub page | Open (see the table above) |
+| Workbook competitor / case-study fields | Done (decision 22) |
+| GitHub link file; group members on the GitHub page | Handled by the team (members are repository contributors; the link is submitted by the team) |
 
 ### 2026-11-21 — Landing zone, watcher and API built
 

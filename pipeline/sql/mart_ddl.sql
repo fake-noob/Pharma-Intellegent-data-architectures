@@ -1,5 +1,5 @@
 -- Phase 1 Sales & Demand Intelligence mart (DuckDB).
--- Two stars sharing conformed Dim_Date and Dim_Medicine (see DWH.Template.Part.1.xlsx):
+-- Two stars sharing conformed Dim_Date and Dim_Medicine (see Milestone.1.SDI.DWH.Excel.xlsx):
 --   FactSales           (transaction grain)       -> Dim_Date x2 roles, Dim_Medicine, Dim_Pharmacy, Dim_SalesContext
 --   FactHospitalDemand  (hospital/medicine/month) -> Dim_Date (month role), Dim_Medicine, Dim_Hospital, Dim_DemandContext
 -- Surrogate key 0 is the unknown / not-applicable member in every dimension.

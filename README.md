@@ -6,7 +6,7 @@ course project for the course Intellegent data architectures for cold chain for 
 CSV sources (`dataset/`) → Postgres staging (raw + validated) → DuckDB star
 schemas → verified analytical queries. Design decisions and progress are in
 [PROJECT_DECISIONS.md](PROJECT_DECISIONS.md); the dimensional design is in
-`DWH.Template.Part.1.xlsx`.
+`Milestone.1.SDI.DWH.Excel.xlsx`.
 
 ### Run it
 
