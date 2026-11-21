@@ -863,8 +863,17 @@ Deliverables as listed for Milestone 1 (SDI DWH), checked against the repository
 | 4 | All code, including Airflow | Pipeline, generator, file watcher, ingestion API, Airflow DAGs and tests done |
 | 5 | Oversampled data folder with data dictionary | Done: `oversampled/` (decision 16) |
 
-Also required by the plan and not yet built: the batch-ingestion, storage and
-query-performance dashboards, the BI dashboard, and two demonstrated refreshes.
+Also required by the plan (status 2026-11-21, after the dashboards were built):
+
+| Plan item | Status |
+|---|---|
+| Batch ingestion, storage and query-performance dashboards | Done (decision 20) |
+| BI dashboard (three business views) | Done (decision 21) |
+| Data oversampling, file watcher, ingestion API, Airflow orchestration | Done (decisions 16-18) |
+| Two demonstrated refreshes with the dashboards changing | Not yet run on the real warehouse; the DAGs were rehearsed in Airflow on a throwaway database before the publish step and dashboards existed, so an end-to-end rehearsal is still needed |
+| Streaming ingestion dashboard | Not built: it belongs to the IoT stream (Phase 3); confirm with the instructor whether Milestone 1 needs it |
+| Excel (.xlsx) ingestion | Not built: the supplied Phase 1 sources are CSV; confirm with the instructor |
+| Workbook competitor / case-study fields; GitHub link file; group members on the GitHub page | Open (see the table above) |
 
 ### 2026-11-21 — Landing zone, watcher and API built
 
