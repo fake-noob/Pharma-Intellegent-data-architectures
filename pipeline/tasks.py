@@ -121,6 +121,12 @@ def verify() -> dict:
     return run_verify()
 
 
+def publish() -> dict:
+    """Copy the dashboard-facing tables to the Postgres ``mart`` schema (after verification)."""
+    from .publish import run_publish
+    return run_publish()
+
+
 def initial_ingest() -> dict:
     """One-time load of the supplied dataset/ extract into staging."""
     from .ingest import run_ingest

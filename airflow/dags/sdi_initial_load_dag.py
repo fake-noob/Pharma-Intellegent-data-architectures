@@ -1,6 +1,6 @@
 """SDI initial load: load the supplied 2023-2025 extract (dataset/) once.
 
-    ingest -> validate -> load -> verify
+    ingest -> validate -> load -> verify -> publish
 
 Run this once on a fresh checkout (about 8 minutes); after that, use `sdi_refresh`.
 Safe to re-run: identical files are skipped and loaded rows are never duplicated.
@@ -47,7 +47,12 @@ def sdi_initial_load():
         from pipeline import tasks
         return tasks.verify()
 
-    verify_warehouse(load_warehouse(validate_batches(ingest_extract())))
+    @task(pool="warehouse", execution_timeout=timedelta(minutes=15))
+    def publish_to_bi(verified: dict):
+        from pipeline import tasks
+        return tasks.publish()
+
+    publish_to_bi(verify_warehouse(load_warehouse(validate_batches(ingest_extract()))))
 
 
 sdi_initial_load()

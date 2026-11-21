@@ -69,8 +69,8 @@ Airflow runs the pipeline as DAGs (web UI at http://localhost:8080, login `admin
 
 | DAG | Tasks | Use |
 |---|---|---|
-| `sdi_initial_load` | ingest, validate, load, verify | Once on a fresh checkout (about 8 minutes) |
-| `sdi_refresh` | generate, deliver, stage, validate, load, verify | One new batch of data; parameter `refresh_number` = 1 or 2 |
+| `sdi_initial_load` | ingest, validate, load, verify, publish | Once on a fresh checkout (about 8 minutes) |
+| `sdi_refresh` | generate, deliver, stage, validate, load, verify, publish | One new batch of data; parameter `refresh_number` = 1 or 2 |
 
 ```bash
 docker compose build airflow            # first time (pulls the Airflow image: use mirror.gcr.io if Docker Hub times out)
@@ -85,12 +85,27 @@ do not run `python -m pipeline.run_phase1 mart` on the host while Airflow is loa
 To rehearse without touching the real warehouse, set `AIRFLOW_PIPELINE_DB`, `AIRFLOW_SOURCE_DIR`,
 `AIRFLOW_LANDING_DIR` and `AIRFLOW_DUCKDB_PATH` before `docker compose up -d airflow`.
 
+### Serving the dashboards: the `mart` schema
+
+BI tools read Postgres, not the DuckDB file. After each verified load, `publish` copies the
+dashboard-sized tables (dimensions, `fact_hospital_demand`, the monthly aggregates, the
+pipeline's batch and query logs) into the `mart` schema of the staging database, plus
+`mart.table_stats` (row counts and date coverage of every warehouse table) and
+`mart.publish_log`. Column names become snake_case. The publish is one transaction and is
+checked against DuckDB (row counts and totals), so dashboards never see a partial or
+mismatched copy.
+
+```bash
+.venv/Scripts/python -m pipeline.run_phase1 publish     # or let the Airflow DAG do it
+```
+
 ### Layout
 
 | Path | Purpose |
 |---|---|
 | `pipeline/ingest.py` | Chunked CSV → `staging.raw_*`, batch metrics |
-| `pipeline/tasks.py` | One function per Airflow task (generate, deliver, stage, validate, load, verify) |
+| `pipeline/publish.py` | Copies dashboard tables from DuckDB to the Postgres `mart` schema, with parity checks |
+| `pipeline/tasks.py` | One function per Airflow task (generate, deliver, stage, validate, load, verify, publish) |
 | `airflow/` | Dockerfile, startup script and the two DAGs |
 | `pipeline/watcher.py` | Landing-zone file watcher (waits for files to finish copying; archives or fails them) |
 | `pipeline/api.py` | HTTP ingestion API: upload, process, list batches |

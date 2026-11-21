@@ -1,6 +1,6 @@
 """Command-line entry point for the Phase 1 pipeline.
 
-    python -m pipeline.run_phase1                 # ingest -> validate -> mart -> verify
+    python -m pipeline.run_phase1                 # ingest -> validate -> mart -> verify -> publish
     python -m pipeline.run_phase1 ingest validate # selected steps, in the given order
     python -m pipeline.run_phase1 landing validate mart verify   # refresh from the landing zone
 
@@ -13,7 +13,7 @@ import json
 import logging
 import time
 
-DEFAULT_STEPS = ("ingest", "validate", "mart", "verify")
+DEFAULT_STEPS = ("ingest", "validate", "mart", "verify", "publish")
 STEPS = DEFAULT_STEPS + ("landing",)   # landing: stage files from the landing zone (see watcher)
 
 
@@ -33,6 +33,9 @@ def run_step(name: str):
     if name == "verify":
         from .verify import run_verify
         return run_verify()
+    if name == "publish":
+        from .publish import run_publish
+        return run_publish()
     raise ValueError(name)
 
 

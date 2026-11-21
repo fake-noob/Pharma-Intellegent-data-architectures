@@ -1,13 +1,13 @@
 """SDI refresh: bring one new batch of data through the whole pipeline.
 
-    generate -> deliver -> stage -> validate -> load -> verify
+    generate -> deliver -> stage -> validate -> load -> verify -> publish
 
 Trigger with the `refresh_number` parameter (1 = 2026 Q1, 2 = 2026 Q2). New rows are
 added to the warehouse; history is never replaced. Re-running a refresh is safe:
 every step skips work it has already done.
 
 Each task is one function in `pipeline/tasks.py`, so this file only wires them.
-The warehouse-writing steps share the `warehouse` pool (1 slot) because DuckDB
+`publish` copies the verified dashboard tables to Postgres for BI. The warehouse steps share the `warehouse` pool (1 slot) because DuckDB
 allows a single writer.
 """
 from __future__ import annotations
@@ -69,12 +69,17 @@ def sdi_refresh():
         from pipeline import tasks
         return tasks.verify()
 
+    @task(pool="warehouse", execution_timeout=timedelta(minutes=15))
+    def publish_to_bi(verified: dict):
+        from pipeline import tasks
+        return tasks.publish()
+
     generated = generate_data()
     delivered = deliver_files(generated)
     staged = stage_files(delivered)
     validated = validate_batches(staged)
     loaded = load_warehouse(validated)
-    verify_warehouse(loaded)
+    publish_to_bi(verify_warehouse(loaded))
 
 
 sdi_refresh()

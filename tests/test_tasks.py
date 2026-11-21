@@ -83,6 +83,36 @@ def test_two_refreshes_through_the_task_chain():
         # Months from both refreshes are present: new data was added, not replaced.
         assert duck.execute("SELECT count(DISTINCT SalesYearMonth) FROM v_sales").fetchone()[0] == 6
 
+    # Publish to the BI schema: complete, equal to the warehouse, repeatable, and atomic.
+    from pipeline import publish as pub
+
+    def mart_state():
+        with pg_connect() as pg:
+            return (pg.execute("SELECT count(*) FROM mart.fact_hospital_demand").fetchone()[0],
+                    pg.execute("SELECT sum(net_sales_amount_usd) FROM mart.agg_sales_month").fetchone()[0],
+                    pg.execute("SELECT count(*) FROM mart.publish_log").fetchone()[0])
+
+    first = tasks.publish()
+    assert first["fact_sales_rows"] == 97_200 and first["tables"]["fact_hospital_demand"] == 4_536
+    rows, net, logged = mart_state()
+    assert (rows, logged) == (4_536, 1)
+    with duck_connect() as duck:
+        assert duck.execute("SELECT sum(NetSalesAmountUSD) FROM fact_sales").fetchone()[0] == net
+    tasks.publish()
+    assert mart_state() == (4_536, net, 2), "re-publishing replaces the tables, it does not append"
+
+    real_parity = pub._parity
+    pub._parity = lambda *a, **k: ["forced difference"]
+    try:
+        tasks.publish()
+    except RuntimeError as exc:
+        assert "parity check failed" in str(exc) and "forced difference" in str(exc), exc
+    else:
+        raise AssertionError("a parity failure must stop the publish")
+    finally:
+        pub._parity = real_parity
+    assert mart_state() == (4_536, net, 2), "a failed publish must leave the published data untouched"
+
 
 def test_validate_gate_stops_a_bad_batch():
     """A batch with more than the allowed share of rejected rows must stop the pipeline."""

@@ -581,6 +581,46 @@ Docker volume would speed it up but hide it from the host. Airflow was run on
 the host's Docker only; no scheduling is configured (refreshes are triggered
 on demand, as the demo needs).
 
+### 19. Serving the dashboards: publish to Postgres (resolves open item 6)
+
+**Decision:** DuckDB remains the warehouse of record, but BI tools read a copy in
+Postgres. `pipeline/publish.py` (the last step of both DAGs and of the default
+command-line run) replaces the `mart` schema's tables inside one transaction after
+verification passes.
+
+- **Published:** the six dimensions, `fact_hospital_demand`, `agg_sales_month`,
+  `agg_hospital_demand_month`, `etl_batch_load`, `etl_query_log`, plus
+  `mart.table_stats` (row count and, for the two facts, date coverage of every
+  warehouse table, including `fact_sales`) and `mart.publish_log` (duration, DuckDB file
+  size). The 500,000+ row `fact_sales` stays in DuckDB; dashboards use its monthly
+  aggregate, which is checked against the fact on every publish.
+- **Why not point BI at DuckDB:** Grafana has no DuckDB driver, and a BI tool holding
+  the file would block the pipeline's single writer. Dashboards now never touch the
+  file, so reads and loads cannot conflict.
+- **Safe by construction:** the publish opens DuckDB read-only, replaces every table
+  in one transaction and compares row counts and measure totals with DuckDB. Any
+  difference aborts the transaction and leaves the previous data in place. Repeated
+  publishes replace, never append. Column names are converted to snake_case
+  (`NetSalesAmountUSD` -> `net_sales_amount_usd`); a changed warehouse column list
+  recreates the table; reporting views in `pipeline/sql/mart_pg_views.sql` (when
+  present) are re-created afterwards.
+- **Type handling:** timezone-aware timestamps are cast to UTC wall-clock timestamps
+  (avoids a `pytz` dependency; times are preserved exactly), and DuckDB's `HUGEINT`
+  sums map to `BIGINT`, where an overflow would fail loudly.
+
+**Verified (2026-11-21):** Published the real warehouse (500,000 sales rows) in about
+2 s. Channel revenue share by year computed on the Postgres copy equals the DuckDB
+result (for example E-commerce 2023: $309,241.61, 16.77%), hospital totals are equal,
+timestamps match to the microsecond, and a second publish added no rows. The publish
+task also ran inside the Airflow container against the bind-mounted DuckDB file.
+`tests/test_tasks.py` covers equality with the warehouse, repeat publishes, and that a
+forced parity failure leaves the published data untouched.
+
+**Limits:** the copy is refreshed once per load, not live; the published tables are
+full replacements (fine at this size: about 2 s); no read-only database role exists yet
+(added with Grafana); the host-side DuckDB file and Airflow still must not write at the
+same time.
+
 ## Progress log
 
 ### 2026-11-18 — Project plan and source data reviewed
@@ -736,6 +776,12 @@ query-performance dashboards, the BI dashboard, and two demonstrated refreshes.
 - Rehearsed both refreshes in Airflow against a separate database, then
   restored the real configuration. Fixed an empty-warehouse crash in `verify`.
 
+### 2026-11-21 — Publish to Postgres for BI
+
+- Added `pipeline/publish.py`, the `publish` task in both DAGs, the `publish` CLI step
+  (now in the default run) and publish tests (decision 19). The real warehouse was
+  published to `pharma_staging.mart` (11 tables plus `table_stats` and `publish_log`).
+
 ## Open decisions and next steps
 
 1. Validate the business requirements and candidate KPI definitions with the
@@ -755,8 +801,7 @@ query-performance dashboards, the BI dashboard, and two demonstrated refreshes.
 5. BI dashboard on the DuckDB views and aggregates, plus the DE observability
    dashboards from `staging.ingest_batch`, `staging.dq_issue` and
    `etl_query_log`. Demonstrate two refreshes.
-6. Decide how BI reads DuckDB while Airflow writes it. DuckDB allows one
-   writer; options are to publish a read-only copy after each load or to
-   serve BI from Postgres.
+6. ~~Decide how BI reads DuckDB while Airflow writes it~~ done: publish to the
+   Postgres `mart` schema (decision 19). Next: add Grafana with a read-only role.
 7. Record subsequent decisions, implementation progress, refresh evidence, and
    changes to assumptions in this file.
