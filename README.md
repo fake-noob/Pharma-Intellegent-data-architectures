@@ -82,8 +82,22 @@ docker exec pharma-airflow airflow dags trigger sdi_refresh -c '{"refresh_number
 Each task is one function in `pipeline/tasks.py`; the DAG files only wire them together. The
 warehouse-writing tasks share a one-slot `warehouse` pool because DuckDB allows one writer, so
 do not run `python -m pipeline.run_phase1 mart` on the host while Airflow is loading.
-To rehearse without touching the real warehouse, set `AIRFLOW_PIPELINE_DB`, `AIRFLOW_SOURCE_DIR`,
-`AIRFLOW_LANDING_DIR` and `AIRFLOW_DUCKDB_PATH` before `docker compose up -d airflow`.
+To rehearse a refresh without consuming the real ones, clone the database and warehouse and point both
+Airflow and Grafana at the clone (stop Grafana first: Postgres only copies a database nobody is using):
+
+```bash
+docker compose stop grafana
+docker exec pharma-staging-pg psql -U pharma -d postgres -c "CREATE DATABASE pharma_rehearsal TEMPLATE pharma_staging"
+mkdir -p warehouse/rehearsal/landing && cp warehouse/pharma_sdi.duckdb warehouse/rehearsal/mart.duckdb
+export AIRFLOW_PIPELINE_DB=pharma_rehearsal AIRFLOW_LANDING_DIR=warehouse/rehearsal/landing        AIRFLOW_DUCKDB_PATH=warehouse/rehearsal/mart.duckdb GRAFANA_PIPELINE_DB=pharma_rehearsal
+docker compose up -d airflow grafana
+# ... trigger sdi_refresh twice, watch the dashboards ...
+# Afterwards: unset the four variables, `docker compose up -d airflow grafana`, DROP DATABASE pharma_rehearsal,
+# delete warehouse/rehearsal, and `git checkout warehouse/reports/phase1_verification.md` (verify rewrites it).
+```
+
+Before the real demo, run `python -m pipeline.run_phase1 verify` once: it reconciles the original 500,000-row
+extract with staging (about 30 s) and remembers it, so the demo's `verify` tasks only read the new files.
 
 ### Serving the dashboards: the `mart` schema
 

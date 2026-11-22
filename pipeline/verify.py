@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import csv
 import logging
+import os
 import re
 import time
 import uuid
@@ -86,15 +87,26 @@ def check_source_to_raw(pg) -> list[Check]:
     comparison is made against the validated staging copy when the batch had no
     rejected rows. With rejected rows the totals legitimately differ, and row accounting
     is covered by check_batch_accounting.
+
+    Each file is reconciled once: a passing batch is stamped ``source_verified_at`` and not
+    re-read on later runs (re-reading every source file made each refresh slower than the
+    last: the 218 MB sales extract alone took over a minute). Set VERIFY_FULL=1 to re-check
+    every file.
     """
+    full = os.environ.get("VERIFY_FULL") == "1"
     checks = []
     for source, measures in ((SALES, SALES_MEASURES), (HOSPITAL_DEMAND, DEMAND_MEASURES)):
         batches = pg.execute(
-            """SELECT batch_id, file_name, file_path, rows_rejected FROM staging.ingest_batch
+            """SELECT batch_id, file_name, file_path, rows_rejected, source_verified_at
+               FROM staging.ingest_batch
                WHERE source_name = %s AND status = 'validated' ORDER BY batch_id""",
             (source.name,)).fetchall()
-        for batch_id, file_name, file_path, rows_rejected in batches:
+        for batch_id, file_name, file_path, rows_rejected, verified_at in batches:
             name = f"source_vs_raw[{file_name}]"
+            if verified_at and not full:
+                checks.append(Check(name, True, f"reconciled with the source file on "
+                                    f"{verified_at:%Y-%m-%d %H:%M} UTC; not re-read (VERIFY_FULL=1 re-checks)"))
+                continue
             path = Path(file_path) if file_path else settings.source_dir / file_name
             if not path.is_file():
                 checks.append(Check(name, True, "source file no longer present; skipped"))
@@ -115,11 +127,16 @@ def check_source_to_raw(pg) -> list[Check]:
             row = pg.execute(f"SELECT count(*), {', '.join(expr(m) for m in measures)} "
                              f"FROM {table} WHERE {where} = %s", (batch_id,)).fetchone()
             mism = [m for m, v in zip(measures, row[1:]) if not _eq(totals[m], v)]
-            checks.append(Check(
+            check = Check(
                 name, n == row[0] and not mism,
                 f"csv rows={n:,} {label} rows={row[0]:,}; measures compared={len(measures)}; "
                 f"mismatches={mism or 'none'}"
-                + ("; raw copy was purged by a database restart" if label != "raw" else "")))
+                + ("; raw copy was purged by a database restart" if label != "raw" else ""))
+            checks.append(check)
+            if check.passed:
+                pg.execute("UPDATE staging.ingest_batch SET source_verified_at = now() WHERE batch_id = %s",
+                           (batch_id,))
+                pg.commit()
     return checks
 
 

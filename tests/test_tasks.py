@@ -65,6 +65,11 @@ def test_two_refreshes_through_the_task_chain():
         verified = tasks.verify()
         assert not verified["failed"], verified
         totals[refresh] = verified["checks"]
+        # Each source file is reconciled once and stamped; a later verify does not re-read it.
+        with pg_connect() as pg:
+            assert pg.execute("SELECT count(*) FROM staging.ingest_batch WHERE source_verified_at IS NULL "
+                              "AND status = 'validated' AND source_name <> 'medicine_master'").fetchone()[0] == 0
+        assert not tasks.verify()["failed"]
 
         # Re-running the chain adds nothing: the files are delivered again, recognised as
         # identical content and skipped, so nothing is validated or loaded twice.
@@ -89,7 +94,11 @@ def test_two_refreshes_through_the_task_chain():
     with pg_connect() as pg:
         pg.execute("TRUNCATE staging.raw_sales, staging.raw_hospital_demand, staging.raw_medicine")
         pg.commit()
-    after_restart = tasks.verify()
+    os.environ["VERIFY_FULL"] = "1"      # re-check every file; otherwise verified batches are skipped
+    try:
+        after_restart = tasks.verify()
+    finally:
+        del os.environ["VERIFY_FULL"]
     assert not after_restart["failed"], after_restart
 
     # Publish to the BI schema: complete, equal to the warehouse, repeatable, and atomic.

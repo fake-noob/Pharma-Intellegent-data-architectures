@@ -76,6 +76,7 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       # Read-only database login created by pipeline.publish (see pipeline/publish.py).
       GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:-grafana_reader_pw}
+      GRAFANA_PIPELINE_DB: ${GRAFANA_PIPELINE_DB:-pharma_staging}   # override to rehearse against a clone
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro

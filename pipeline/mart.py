@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import duckdb
@@ -313,9 +314,18 @@ def ensure_mart_schema(duck: duckdb.DuckDBPyConnection) -> None:
     run_sql_file(duck, SQL_DIR / "mart_ddl.sql")
 
 
+@contextmanager
+def _stage(timings: dict, name: str):
+    """Record how long a load stage took (seconds), so slow steps are visible in the task output."""
+    t = time.perf_counter()
+    yield
+    timings[name] = round(time.perf_counter() - t, 1)
+
+
 def run_mart_load() -> dict:
     t0 = time.perf_counter()
-    summary: dict = {"batches": {}, "dimensions": [], "facts": {}}
+    timings: dict[str, float] = {}
+    summary: dict = {"batches": {}, "dimensions": [], "facts": {}, "stage_seconds": timings}
     with duck_connect() as duck:
         ensure_mart_schema(duck)
         pending = {
@@ -332,7 +342,8 @@ def run_mart_load() -> dict:
                                 ("sales", SALES_SPEC, "new_sales"),
                                 ("demand", HOSPITAL_SPEC, "new_hospital_demand")):
             if pending[key]:
-                extracted[key] = extract_to_duck(duck, spec, pending[key], temp)
+                with _stage(timings, f"extract_{key}"):
+                    extracted[key] = extract_to_duck(duck, spec, pending[key], temp)
             else:
                 # Empty typed table keeps the downstream SQL uniform.
                 cols = ", ".join(
@@ -343,33 +354,43 @@ def run_mart_load() -> dict:
 
         duck.execute("BEGIN TRANSACTION")
         try:
-            extend_dim_date(duck, """
-                SELECT sales_date FROM new_sales UNION ALL
-                SELECT pharmacy_delivery_date FROM new_sales UNION ALL
-                SELECT demand_month FROM new_hospital_demand""")
+            with _stage(timings, "dim_date"):
+                extend_dim_date(duck, """
+                    SELECT sales_date FROM new_sales UNION ALL
+                    SELECT pharmacy_delivery_date FROM new_sales UNION ALL
+                    SELECT demand_month FROM new_hospital_demand""")
 
-            summary["dimensions"].append(apply_scd2(
-                duck, dim="dim_medicine", sk="MedicineKey", seq="seq_medicine_key", nk="MedicineID", nk_src="medicine_id",
-                attrs=MEDICINE_ATTRS, extra={"SourceEffectiveFromDate": "effective_from_date"},
-                obs_from="new_medicine", event_date="effective_from_date", order_by="batch_id"))
-            summary["dimensions"].append(apply_scd2(
-                duck, dim="dim_pharmacy", sk="PharmacyKey", seq="seq_pharmacy_key", nk="PharmacyID", nk_src="pharmacy_id",
-                attrs=PHARMACY_ATTRS, extra={}, obs_from="new_sales",
-                event_date="sales_date", order_by="batch_id * 100000000 + source_row_num"))
-            summary["dimensions"].append(apply_scd2(
-                duck, dim="dim_hospital", sk="HospitalKey", seq="seq_hospital_key", nk="HospitalID", nk_src="hospital_id",
-                attrs=HOSPITAL_ATTRS, extra={}, obs_from="new_hospital_demand",
-                event_date="demand_month", order_by="batch_id * 100000000 + source_row_num"))
+            scd2_specs = (
+                ("scd2_medicine", dict(dim="dim_medicine", sk="MedicineKey", seq="seq_medicine_key",
+                                       nk="MedicineID", nk_src="medicine_id", attrs=MEDICINE_ATTRS,
+                                       extra={"SourceEffectiveFromDate": "effective_from_date"},
+                                       obs_from="new_medicine", event_date="effective_from_date",
+                                       order_by="batch_id")),
+                ("scd2_pharmacy", dict(dim="dim_pharmacy", sk="PharmacyKey", seq="seq_pharmacy_key",
+                                       nk="PharmacyID", nk_src="pharmacy_id", attrs=PHARMACY_ATTRS,
+                                       extra={}, obs_from="new_sales", event_date="sales_date",
+                                       order_by="batch_id * 100000000 + source_row_num")),
+                ("scd2_hospital", dict(dim="dim_hospital", sk="HospitalKey", seq="seq_hospital_key",
+                                       nk="HospitalID", nk_src="hospital_id", attrs=HOSPITAL_ATTRS,
+                                       extra={}, obs_from="new_hospital_demand", event_date="demand_month",
+                                       order_by="batch_id * 100000000 + source_row_num")),
+            )
+            for stage_name, kwargs in scd2_specs:
+                with _stage(timings, stage_name):
+                    summary["dimensions"].append(apply_scd2(duck, **kwargs))
 
-            summary["dimensions"].append({"dim": "dim_sales_context", "new_members": add_junk_members(
-                duck, dim="dim_sales_context", sk="SalesContextKey", seq="seq_sales_context_key",
-                cols=SALES_CONTEXT_COLS, source="new_sales")})
-            summary["dimensions"].append({"dim": "dim_demand_context", "new_members": add_junk_members(
-                duck, dim="dim_demand_context", sk="DemandContextKey", seq="seq_demand_context_key",
-                cols=DEMAND_CONTEXT_COLS, source="new_hospital_demand")})
+            with _stage(timings, "junk_dimensions"):
+                summary["dimensions"].append({"dim": "dim_sales_context", "new_members": add_junk_members(
+                    duck, dim="dim_sales_context", sk="SalesContextKey", seq="seq_sales_context_key",
+                    cols=SALES_CONTEXT_COLS, source="new_sales")})
+                summary["dimensions"].append({"dim": "dim_demand_context", "new_members": add_junk_members(
+                    duck, dim="dim_demand_context", sk="DemandContextKey", seq="seq_demand_context_key",
+                    cols=DEMAND_CONTEXT_COLS, source="new_hospital_demand")})
 
-            summary["facts"]["fact_sales"] = insert_fact_sales(duck)
-            summary["facts"]["fact_hospital_demand"] = insert_fact_hospital_demand(duck)
+            with _stage(timings, "fact_sales"):
+                summary["facts"]["fact_sales"] = insert_fact_sales(duck)
+            with _stage(timings, "fact_hospital_demand"):
+                summary["facts"]["fact_hospital_demand"] = insert_fact_hospital_demand(duck)
 
             for key, spec, temp in (("medicine", MEDICINE_SPEC, "new_medicine"),
                                     ("sales", SALES_SPEC, "new_sales"),
@@ -386,8 +407,10 @@ def run_mart_load() -> dict:
                       SELECT SourceBatchID, count(*) FROM fact_hospital_demand GROUP BY 1) x
                 WHERE etl_batch_load.BatchID = x.b AND etl_batch_load.RowsInserted IS NULL
             """)
-            run_sql_file(duck, SQL_DIR / "mart_serving.sql")
-            duck.execute("COMMIT")
+            with _stage(timings, "serving_layer"):
+                run_sql_file(duck, SQL_DIR / "mart_serving.sql")
+            with _stage(timings, "commit"):
+                duck.execute("COMMIT")
         except Exception:
             duck.execute("ROLLBACK")
             raise

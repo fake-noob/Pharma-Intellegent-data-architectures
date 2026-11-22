@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,7 +44,11 @@ class Settings:
     watch_poll_seconds: float = float(os.environ.get("WATCH_POLL_SECONDS", "5"))
     # A file is read only after its size has been unchanged for this many polls.
     watch_stable_polls: int = int(os.environ.get("WATCH_STABLE_POLLS", "2"))
-    work_dir: Path = REPO_ROOT / os.environ.get("WORK_DIR", "warehouse/tmp")
+    # Scratch space for the staging -> warehouse extract. Defaults to the OS temp directory, NOT the
+    # project folder: on Docker Desktop the project is a Windows bind mount where writing the extract
+    # file took 130 s instead of 3 s (measured), so scratch data must live on local disk.
+    work_dir: Path = (REPO_ROOT / os.environ["WORK_DIR"] if os.environ.get("WORK_DIR")
+                      else Path(tempfile.gettempdir()) / "pharma_sdi_work")
     report_dir: Path = REPO_ROOT / os.environ.get("REPORT_DIR", "warehouse/reports")
     chunk_rows: int = int(os.environ.get("INGEST_CHUNK_ROWS", "100000"))
 

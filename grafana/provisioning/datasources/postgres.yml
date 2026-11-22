@@ -9,7 +9,7 @@ datasources:
     isDefault: true
     editable: false
     jsonData:
-      database: pharma_staging
+      database: ${GRAFANA_PIPELINE_DB}   # pharma_staging unless rehearsing against a clone
       sslmode: disable
       postgresVersion: 1600
       timescaledb: false

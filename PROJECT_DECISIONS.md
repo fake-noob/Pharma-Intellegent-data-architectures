@@ -758,6 +758,60 @@ unchanged; a cell-by-cell comparison with the previous version shows only these 
   facts (see `pipeline/sql/mart_ddl.sql`). The Star.Schema sheet holds a text diagram, not a drawn
   image.
 
+### 23. Two-refresh rehearsal and the performance fixes it found
+
+**What was done (2026-11-21):** a full rehearsal on a clone of the real database and warehouse
+(`CREATE DATABASE ... TEMPLATE`, a copy of the DuckDB file), with Airflow and Grafana both pointed at the
+clone, so refreshes 1 and 2 stay unused for the real demo. `sdi_refresh` was triggered for refresh 1 and
+then refresh 2; the headline value of 18 dashboard panels was read through Grafana before, after each
+refresh and again after a second full run. Afterwards the clone and its run history were removed and the
+real system was checked untouched (3 batches, 500,000 sales rows).
+
+| Dashboard value | Start | After refresh 1 | After refresh 2 |
+|---|---|---|---|
+| Months of sales data / latest month | 36 / 2025-12 | 39 / 2026-03 | 42 / 2026-06 |
+| Files staged | 3 | 5 | 8 |
+| Sales fact rows | 500,000 | 548,600 | 597,200 |
+| Demand fact rows | 27,216 | 29,484 | 31,752 |
+| DuckDB file size | 51.4 MB | 60.8 MB | 65.0 MB |
+| Net sales (all time) | $5.97M | $6.56M | $7.06M |
+| Hospital consumption vs forecast | 1.06% | 1.03% | 1.02% |
+| Unfulfilled demand | 2,563 | 3,091 | 3,482 |
+| Cold-chain share of net sales | 16.0% | 16.6% | 15.4% |
+| Fastest mover (12 months) | Amoxicillin | Duloxetine | Azithromycin |
+| Publish history (sales rows) | 4 equal bars | 5th bar steps up | 6th bar steps up |
+
+After refresh 2: 68 medicine versions (5 closed); for MED001, sales are priced $2.90 through March 2026
+and $3.04 from April. Batch success rate stayed 100% and date coverage had no gaps.
+
+**Problem found: a refresh took 6.6 and 8.2 minutes.** Per-stage timing (now recorded in the load
+task's output as `stage_seconds`) showed:
+- The warehouse load spent 130 of 146 s writing a scratch CSV of the staged rows to `warehouse/tmp`,
+  a Windows bind mount, where many small writes are very slow. DuckDB's own writes to the same mount
+  were fast (2-4 s), so the mount was not the general problem. The scratch directory now defaults to the OS
+  temp folder (`WORK_DIR` overrides it): the load of both refreshes together takes 6.7 s instead of 145.6 s.
+- `verify` re-read every source file ever loaded (including the 218 MB original) on every run, so it grew
+  with each refresh (60 s, then 156 s). A source file is now reconciled once, stamped
+  `ingest_batch.source_verified_at`, and skipped afterwards (`VERIFY_FULL=1` re-checks everything). Tests cover
+  both the skip and the forced full check.
+
+**Result:** the same two refreshes now take about 2 minutes each, 136 s and 131 s wall clock, of which
+about 90-100 s is task time (stage 23-26, validate 26-27, load 7-8, verify 15-20, publish 7-12, generate and
+deliver a few seconds) and the rest is scheduler gaps between tasks. All 18 dashboard values were identical
+to the slow run.
+
+**For the demo:** run `python -m pipeline.run_phase1 verify` once beforehand (done on the real system; it
+stamps the original files), then trigger `sdi_refresh` with refresh_number 1 and 2 from the Airflow UI.
+Two refreshes take about 4.5 minutes of wall clock, so a 5-minute video should show the first live and
+speed up or cut the second.
+
+**Observations:** the generated 2026 months are visibly taller than mid-2025 on the net-sales chart: each
+refresh adds 48,600 sales rows spread evenly over its quarter (about 16,000 a month), while typical
+2025 months held 6,000-9,000 rows and the source's 2025 total was dominated by one burst (95,000 rows in
+January 2025). The size matches the yearly total plus growth (decision 16), but the evenness is smoother than
+the source; mention it if asked. The rehearsal also rewrote the tracked verification report with the
+clone's numbers (restored with `git checkout`).
+
 ## Progress log
 
 ### 2026-11-18 — Project plan and source data reviewed
@@ -901,7 +955,7 @@ Also required by the plan (status 2026-11-21, after the dashboards were built):
 | Batch ingestion, storage and query-performance dashboards | Done (decision 20) |
 | BI dashboard (three business views) | Done (decision 21) |
 | Data oversampling, file watcher, ingestion API, Airflow orchestration | Done (decisions 16-18) |
-| Two demonstrated refreshes with the dashboards changing | Not yet run on the real warehouse; the DAGs were rehearsed in Airflow on a throwaway database before the publish step and dashboards existed, so an end-to-end rehearsal is still needed |
+| Two demonstrated refreshes with the dashboards changing | Rehearsed end to end on a clone (decision 23): about 2 minutes per refresh, dashboards change as expected; the real refreshes are still unused for the live demo |
 | Streaming ingestion dashboard | Not built: it belongs to the IoT stream (Phase 3); confirm with the instructor whether Milestone 1 needs it |
 | Excel (.xlsx) ingestion | Not built: the supplied Phase 1 sources are CSV; confirm with the instructor |
 | Workbook competitor / case-study fields | Done (decision 22) |
@@ -941,6 +995,12 @@ Also required by the plan (status 2026-11-21, after the dashboards were built):
 - Added `grafana/build_bi.py` (three dashboards, 38 panels), template-variable support in
   `tests/test_dashboards.py` (76 panels total now pass) and the hospital dashboard as the Grafana home
   page (decision 21).
+
+### 2026-11-21 — Two-refresh rehearsal
+
+- Rehearsed both refreshes end to end on a clone (decision 23), fixed two performance problems it exposed
+  (scratch directory on a bind mount; verify re-reading every source file) and re-ran: about 2 minutes
+  per refresh instead of 7-8. All five test suites pass. Real system verified untouched afterwards.
 
 ## Open decisions and next steps
 

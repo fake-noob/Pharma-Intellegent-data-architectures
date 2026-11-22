@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS staging.ingest_batch (
 -- Where the file was read from (landing/archive path); verification re-reads it.
 ALTER TABLE staging.ingest_batch ADD COLUMN IF NOT EXISTS file_path TEXT;
 ALTER TABLE staging.ingest_batch ADD COLUMN IF NOT EXISTS trigger_type TEXT;  -- initial | watcher | api
+-- Set when the source file's totals were reconciled with staging (verify skips such batches).
+ALTER TABLE staging.ingest_batch ADD COLUMN IF NOT EXISTS source_verified_at TIMESTAMPTZ;
 
 -- The same file content is staged at most once per source (idempotent re-runs).
 CREATE UNIQUE INDEX IF NOT EXISTS ux_ingest_batch_file_once
