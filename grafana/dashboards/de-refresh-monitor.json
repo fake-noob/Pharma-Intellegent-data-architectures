@@ -61,7 +61,7 @@
   },
   "panels": [
     {
-      "id": 31,
+      "id": 40,
       "type": "stat",
       "title": "Last publish",
       "description": "When the dashboards' data was last refreshed from the warehouse.",
@@ -124,7 +124,7 @@
       }
     },
     {
-      "id": 32,
+      "id": 41,
       "type": "stat",
       "title": "Months of sales data",
       "description": "Calendar months with sales; grows as refreshes add new periods.",
@@ -186,7 +186,7 @@
       }
     },
     {
-      "id": 33,
+      "id": 42,
       "type": "stat",
       "title": "Latest sales month",
       "description": "Most recent month in the sales data.",
@@ -248,7 +248,7 @@
       }
     },
     {
-      "id": 34,
+      "id": 43,
       "type": "stat",
       "title": "Files staged so far",
       "description": "Source files loaded since the start (initial extract plus refresh files).",
@@ -310,13 +310,26 @@
       }
     },
     {
-      "id": 35,
+      "id": 48,
+      "type": "row",
+      "title": "Did the last refresh add rows?",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 44,
       "type": "barchart",
       "title": "Sales fact rows after each publish",
       "description": "Total rows in the sales fact at each of the last 12 publishes (oldest left). A step up is a refresh landing: history is kept and new rows are added.",
       "gridPos": {
         "x": 0,
-        "y": 4,
+        "y": 5,
         "w": 12,
         "h": 8
       },
@@ -381,7 +394,7 @@
         "showValue": "never",
         "stacking": "none",
         "groupWidth": 0.7,
-        "barWidth": 0.7,
+        "barWidth": 0.5,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -399,13 +412,13 @@
       }
     },
     {
-      "id": 36,
+      "id": 45,
       "type": "barchart",
       "title": "Hospital demand rows after each publish",
       "description": "Total rows in the hospital demand fact at each publish. Kept in its own chart: its scale differs from sales, so the two are never shown on one axis.",
       "gridPos": {
         "x": 12,
-        "y": 4,
+        "y": 5,
         "w": 12,
         "h": 8
       },
@@ -470,7 +483,7 @@
         "showValue": "never",
         "stacking": "none",
         "groupWidth": 0.7,
-        "barWidth": 0.7,
+        "barWidth": 0.5,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -488,13 +501,26 @@
       }
     },
     {
-      "id": 37,
-      "type": "barchart",
+      "id": 49,
+      "type": "row",
+      "title": "Which months are loaded?",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 46,
+      "type": "trend",
       "title": "Net sales per month (USD)",
       "description": "Net sales by month from the warehouse's monthly aggregate: new months appear after each refresh. Jan-Feb 2023 are a ramp-up (sales data starts 2023-01-30).",
       "gridPos": {
         "x": 0,
-        "y": 12,
+        "y": 14,
         "w": 24,
         "h": 9
       },
@@ -511,7 +537,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT year_month AS month, round(sum(net_sales_amount_usd), 0) AS \"Net sales (USD)\"\n                FROM mart.agg_sales_month GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT extract(epoch FROM to_date(year_month, 'YYYY-MM')) * 1000 AS month,\n                       round(sum(net_sales_amount_usd), 0) AS \"Net sales (USD)\"\n                FROM mart.agg_sales_month GROUP BY year_month ORDER BY year_month",
           "refId": "A"
         }
       ],
@@ -522,17 +548,25 @@
             "fixedColor": "#06B6D4"
           },
           "custom": {
-            "fillOpacity": 90,
+            "drawStyle": "bars",
             "lineWidth": 0,
-            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "barAlignment": 0,
+            "fillOpacity": 90,
+            "showPoints": "never",
+            "pointSize": 6,
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisGridShow": true,
             "axisBorderShow": false,
             "axisPlacement": "auto",
-            "axisGridShow": true,
-            "axisColorMode": "text",
-            "axisCenteredZero": false,
             "scaleDistribution": {
               "type": "linear"
             },
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
@@ -552,18 +586,23 @@
           "unit": "currencyUSD",
           "noValue": "No data"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "month"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:MMM YY"
+              }
+            ]
+          }
+        ]
       },
       "options": {
-        "orientation": "vertical",
-        "showValue": "never",
-        "stacking": "none",
-        "groupWidth": 0.7,
-        "barWidth": 0.7,
-        "barRadius": 0.15,
-        "fullHighlight": false,
-        "xTickLabelRotation": -45,
-        "xTickLabelSpacing": 0,
+        "xField": "month",
         "legend": {
           "showLegend": false,
           "displayMode": "list",
@@ -571,19 +610,32 @@
           "calcs": []
         },
         "tooltip": {
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       }
     },
     {
-      "id": 38,
+      "id": 50,
+      "type": "row",
+      "title": "Files staged, newest first",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 47,
       "type": "table",
       "title": "Batches, newest first",
       "description": "Every file staged, newest first: refresh files appear here as they land.",
       "gridPos": {
         "x": 0,
-        "y": 21,
+        "y": 24,
         "w": 24,
         "h": 8
       },

@@ -116,13 +116,16 @@ mismatched copy.
 ### Dashboards (Grafana)
 
 Seven dashboards are provisioned from code (`grafana/`): three for the business (the Phase 1
-questions) and four for the data pipeline. Home is the hospital forecast dashboard.
+questions) and four for the data pipeline. Home is the hospital forecast dashboard. Each business
+dashboard opens on a compact row of tiles and its **two most important charts**, sized for a 1080p screen
+without scrolling; the detail sits in collapsed sections (click a section header to open it). Colours carry
+meaning: green on target, amber watch, coral failing, cyan actual volume. Filters are in the bar at the top.
 
 | Business dashboard | Question it answers |
 |---|---|
-| Hospital forecast vs consumption | How well was hospital demand forecast, and where did it go unmet? (filters: disease category, hospital) |
-| Channel revenue and margin | Where does revenue come from: retail, hospital pharmacies or e-commerce? (filters: disease category, channel) |
-| Fast and slow movers | Which medicines sell most and least, and how do cold-chain medicines compare? (filters: disease category, window) |
+| Hospital forecast vs consumption | How well was hospital demand forecast, and where did it go unmet? Key charts: forecast vs consumption, unfulfilled demand by month; heat map and hotspots in a collapsed section (filters: disease category, hospital) |
+| Channel revenue and margin | Where does revenue come from: retail, hospital pharmacies or e-commerce? Key charts: net sales by month and channel, revenue share (filters: disease category, channel) |
+| Fast and slow movers | Which medicines sell most and least, and how do cold-chain medicines compare? Key charts: fast movers by packs, top 10 by net sales (filters: disease category, window) |
 
 The four pipeline dashboards:
 
@@ -130,7 +133,7 @@ The four pipeline dashboards:
 |---|---|
 | Batch ingestion | success rate, load duration and rows per file, load speed, data-quality findings |
 | Storage and coverage | table row counts, DuckDB and Postgres size, storage by source domain, date coverage |
-| Query performance | execution time per query, volume, error rate |
+| Query performance | execution time per query, time per run, error rate and a "What failed?" table |
 | Refresh monitor | what changed after each refresh: publish history, months loaded, batches |
 
 ```bash
@@ -141,7 +144,8 @@ docker compose up -d grafana                          # http://localhost:3000 (v
 ```
 
 Dashboards refresh every 30 s (and read new data after each publish) and read only Postgres, as the `grafana_reader` role (it cannot see
-raw data or write anything). Dashboards are edited in `grafana/build_dashboards.py`, not in the UI.
+raw data or write anything). Dashboards are edited in `grafana/build_dashboards.py` (helpers and the pipeline dashboards) and
+`grafana/build_bi.py` (the three business dashboards), not in the UI.
 
 ### Layout
 

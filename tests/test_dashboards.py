@@ -82,6 +82,13 @@ def run_panel(panel: dict, dash: dict, variables: dict[str, str]) -> tuple[int, 
     return rows, None
 
 
+def all_panels(dash: dict):
+    """Every panel, including those stored inside collapsed rows."""
+    for panel in dash["panels"]:
+        yield panel
+        yield from panel.get("panels", [])
+
+
 def test_every_panel_query_runs():
     failures, checked = [], 0
     for path in sorted(DASHBOARDS.glob("*.json")):
@@ -90,7 +97,9 @@ def test_every_panel_query_runs():
         for annotation in dash["annotations"]["list"]:           # annotation queries must run too
             err = query(annotation["target"]["rawSql"], dash["time"]).get("error")
             assert not err, f"{dash['uid']} annotation {annotation['name']}: {err}"
-        for panel in dash["panels"]:
+        for panel in all_panels(dash):
+            if panel["type"] == "row":                            # section header, no query
+                continue
             rows, error = run_panel(panel, dash, variables)
             checked += 1
             status = "ERROR " + error if error else f"{rows} rows"

@@ -61,7 +61,7 @@
   },
   "panels": [
     {
-      "id": 12,
+      "id": 15,
       "type": "stat",
       "title": "Sales fact rows",
       "description": "Rows in the sales fact table (one per sales transaction).",
@@ -124,7 +124,7 @@
       }
     },
     {
-      "id": 13,
+      "id": 16,
       "type": "stat",
       "title": "Demand rows",
       "description": "Rows in the hospital demand fact table (hospital x medicine x month).",
@@ -187,7 +187,7 @@
       }
     },
     {
-      "id": 14,
+      "id": 17,
       "type": "stat",
       "title": "DuckDB size",
       "description": "Size of the DuckDB warehouse file on disk, at the last publish.",
@@ -250,7 +250,7 @@
       }
     },
     {
-      "id": 15,
+      "id": 18,
       "type": "stat",
       "title": "Postgres size",
       "description": "Physical size of the staging database (live): staging, mart and the pipeline's own tables.",
@@ -313,7 +313,7 @@
       }
     },
     {
-      "id": 16,
+      "id": 19,
       "type": "stat",
       "title": "Tables",
       "description": "Tables in the DuckDB warehouse (dimensions, facts, aggregates, pipeline logs).",
@@ -375,7 +375,7 @@
       }
     },
     {
-      "id": 17,
+      "id": 20,
       "type": "stat",
       "title": "Coverage gaps",
       "description": "Calendar months between the first and last date that have no data. 0 means the time range is fully covered.",
@@ -451,13 +451,26 @@
       }
     },
     {
-      "id": 18,
+      "id": 26,
+      "type": "row",
+      "title": "How big is the warehouse?",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 21,
       "type": "barchart",
       "title": "Rows per warehouse table (tables with 1,000+ rows)",
       "description": "Cumulative records stored in each large warehouse table (SELECT COUNT(*)). Small dimension tables are in the table below.",
       "gridPos": {
         "x": 0,
-        "y": 4,
+        "y": 5,
         "w": 12,
         "h": 9
       },
@@ -522,7 +535,7 @@
         "showValue": "auto",
         "stacking": "none",
         "groupWidth": 0.7,
-        "barWidth": 0.7,
+        "barWidth": 0.5,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -540,13 +553,13 @@
       }
     },
     {
-      "id": 19,
+      "id": 22,
       "type": "barchart",
       "title": "Staging storage by source domain (MB)",
       "description": "Disk used (table plus indexes) by each source domain, in the raw staging layer and the validated staging layer. Raw staging is emptied by a database restart (it is rebuilt from the files), so it can read 0.",
       "gridPos": {
         "x": 12,
-        "y": 4,
+        "y": 5,
         "w": 12,
         "h": 9
       },
@@ -657,7 +670,7 @@
         "showValue": "never",
         "stacking": "normal",
         "groupWidth": 0.7,
-        "barWidth": 0.7,
+        "barWidth": 0.5,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -675,13 +688,26 @@
       }
     },
     {
-      "id": 20,
+      "id": 27,
+      "type": "row",
+      "title": "Is every month covered?",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 23,
       "type": "table",
       "title": "Date coverage (expected: continuous from first to last date)",
       "description": "First and last date in each fact and how many calendar months have data. The 2023-2025 range must be fully represented.",
       "gridPos": {
         "x": 0,
-        "y": 13,
+        "y": 15,
         "w": 24,
         "h": 5
       },
@@ -780,13 +806,26 @@
       }
     },
     {
-      "id": 21,
+      "id": 28,
+      "type": "row",
+      "title": "Every table",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 24,
       "type": "table",
       "title": "All warehouse tables",
       "description": "Row counts of every table in the DuckDB warehouse (as of the last publish).",
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 21,
         "w": 12,
         "h": 10
       },
@@ -869,13 +908,13 @@
       }
     },
     {
-      "id": 22,
+      "id": 25,
       "type": "table",
       "title": "Staging tables",
       "description": "Exact row counts and on-disk size of each staging table.",
       "gridPos": {
         "x": 12,
-        "y": 18,
+        "y": 21,
         "w": 12,
         "h": 10
       },

@@ -681,14 +681,15 @@ requires no login, so use only on a trusted machine.
 
 **Decision:** Three Grafana dashboards, one per question in the project plan, built by
 `grafana/build_bi.py` on the Postgres `mart` schema (same provisioning and read-only role as
-decision 20). They have filters (Grafana template variables), a shaded sales ramp-up band on time
-charts, and tiles that lead each dashboard. The hospital dashboard is the Grafana home page.
+decision 20). They have filters (Grafana template variables) and tiles that lead each dashboard. The
+hospital dashboard is the Grafana home page. The layout, several panels and the colours below were
+revised after a usability review: see decision 24, which supersedes the panel lists in this table.
 
 | Plan dashboard | Dashboard | Main content |
 |---|---|---|
 | Hospital forecast vs actual consumption ratio; unfulfilled demand analysis | Hospital forecast vs consumption | Tiles: consumption vs forecast %, WAPE, request fill rate, dispensing service level, unfulfilled packs, stockout days. Forecast vs consumed by month; variance by disease category; largest medicine gaps; unfulfilled demand by month, by hospital-medicine pair and in detail; stockout days by hospital; fill rate by month |
-| Channel revenue split and gross margin comparison | Channel revenue and margin | Tiles: net sales, packs, transactions, margin rate, return rate, 12-month growth. Net sales by month and channel (stacked, ramp-up shaded); revenue share; yearly stacked columns; growth table; margin and returns table; net sales by disease category |
-| Top 10 fast vs slow movers (cold chain) by therapeutic class | Fast and slow movers | Tiles: medicines, cold-chain count, cold-chain share of net sales and of packs, fastest and slowest mover. Top 10 and bottom 10 by packs (cold chain in orange); volume-vs-revenue scatter; disease-category and cold-chain tables; full ranking |
+| Channel revenue split and gross margin comparison | Channel revenue and margin | Tiles: net sales, packs, transactions, margin rate, return rate, 12-month growth. Net sales by month and channel (stacked; the ramp-up months are explained in the tooltip); revenue share; yearly stacked columns; growth table; margin and returns table; net sales by disease category |
+| Top 10 fast vs slow movers (cold chain) by therapeutic class | Fast and slow movers | Tiles: medicines, cold-chain count, cold-chain share of net sales and of packs, fastest and slowest mover. Top 10 and bottom 10 by packs and top 10 by net sales (cold chain in orange); disease-category and cold-chain tables; full ranking |
 
 **Rules applied (decisions 7 and 15):**
 - Every ratio is a ratio of sums, never an average of row percentages; hospital and sales data
@@ -697,10 +698,10 @@ charts, and tiles that lead each dashboard. The hospital dashboard is the Grafan
   in the data, so it moves forward after each refresh. Medicines with no sales in the window are
   ranked (slowest first), as decided.
 - The growth tile and table compare the latest 12 months with the 12 before and ignore the time
-  picker, so the 2023 ramp-up months cannot inflate growth. The ramp-up is shaded on time charts.
+  picker, so the 2023 ramp-up months cannot inflate growth.
 - Margin is flat (23.4% in every channel and year), so the channel view leads with revenue share
   and growth; margin is a tile and a table, not a chart.
-- Volume is not revenue: the scatter and the cold-chain tiles show that cold-chain medicines are
+- Volume is not revenue: the top-10-by-net-sales chart and the cold-chain tiles show that cold-chain medicines are
   2.3% of packs but 16% of net sales, and the three cold-chain medicines (Semaglutide, Insulin
   Glargine, Insulin Aspart) are among the slowest sellers by packs.
 - Request fill rate (92.7%) and dispensing service level (99.96%) are shown side by side and
@@ -722,8 +723,7 @@ cannot parse commas (so the channel queries failed), 49-bar class charts, year l
 dollar amounts, a scatter panel that crashed (replaced with Grafana's Trend panel in points mode),
 and clipped tables and tile titles.
 
-**Limits:** all data shown is as of the last publish; filters are 'All' by default; the scatter has
-no per-point labels (hover shows values); the "rising sales with unmet hospital demand" analysis
+**Limits:** all data shown is as of the last publish; filters are 'All' by default; the "rising sales with unmet hospital demand" analysis
 (query q3b) returns no medicines on the supplied data, so it has no panel; the cold-chain slice
 has only three medicines, so conclusions about it are anecdotal.
 
@@ -811,6 +811,58 @@ refresh adds 48,600 sales rows spread evenly over its quarter (about 16,000 a mo
 January 2025). The size matches the yearly total plus growth (decision 16), but the evenness is smoother than
 the source; mention it if asked. The rehearsal also rewrote the tracked verification report with the
 clone's numbers (restored with `git checkout`).
+
+### 24. Dashboard usability review and one-screen layout (2026-11-22)
+
+**What prompted it:** a reviewer called the first dashboards "a default Grafana developer view" (one blue,
+no status colour, clipped labels, a duplicated row, dead space on the time axes), and we then reviewed all
+seven from the point of view of a planner who reads the page. Panel queries keep their meaning; the
+presentation, layout and a few panels changed. Everything is still generated by
+`grafana/build_dashboards.py` (helpers and the pipeline dashboards) and `grafana/build_bi.py` (business).
+
+**Design rules adopted**
+- **Semantic colour:** slate = neutral baseline/forecast, cyan = actual volume, green = on target, amber =
+  watch, coral = failing. Entity colours stay fixed (channels blue/orange/green; cold chain orange).
+- **Never clip text:** tile titles of 15 characters or fewer (full wording in the tooltip), short category and
+  hospital labels, explicit table column widths so every column is visible without scrolling.
+- **Honest scales:** fill rate on an 88-96% axis with a dashed 95% target line (the 95% is our assumption: the
+  source defines no SLA, and the panel text says so). Table gauges scale to the visible rows, never a fixed maximum.
+- **Axes fit the data:** the monthly charts use Grafana's Trend panel on a numeric x axis, so the axis ends at
+  the last month with data and grows after a refresh (a time series would leave empty space up to "now").
+  Month labels are horizontal and automatically spaced.
+- **Filters apply everywhere:** the hospital x disease-category heat map is built from a long query pivoted by a
+  matrix transformation, so only categories and hospitals in the current filter appear and empty cells are
+  blank, not zeros.
+- **Ratios stay ratio-of-sums:** sparklines are drawn only on additive tiles (unfulfilled packs, stockout
+  days), never on a ratio.
+
+**Panel changes:** hospital: forecast gaps table with inline bars and coloured variance; new forecast error
+(WAPE) by month; a heat map and a single hotspots table replace the duplicated bar chart and table; stockout days
+show only hospitals with at least one. Channel: revenue share in channel colours, growth coloured green/red.
+Movers: the unlabeled scatter was replaced by "Top 10 by net sales" (Semaglutide, the slowest mover by packs, is
+second by revenue), and the ranking table gained bars and a storage column. Query performance: a "What failed?"
+table shows the error behind the error-rate tile (one fixed Nov 18 error), the empty 90-day timelines became bars
+per run, and batch ingestion shows load speed per file. The sales ramp-up band annotation was dropped because the
+new chart cannot draw it (the tooltip explains the ramp-up).
+
+**Layout for a PC screen:** each business dashboard shows a compact row of tiles and the **two most important
+charts** directly under the filters, large enough to read on a 1080p screen without scrolling; everything else is
+in collapsed sections that open on click:
+
+| Dashboard | Two key charts | Collapsed sections |
+|---|---|---|
+| Hospital forecast vs consumption | Forecast vs consumption; unfulfilled demand by month | forecast detail; fill rate vs target; where to act (heat map, hotspots, stockout days) |
+| Channel revenue and margin | Net sales by month and channel; revenue share | is it growing; margin, returns and category mix |
+| Fast and slow movers | Fast movers (packs); top 10 by net sales | slow movers and categories; cold-chain detail and full ranking |
+
+The four data-engineering dashboards keep their section headers (not collapsed); each is about one screen tall.
+
+**Limit - filters stay in the top bar:** we asked for a scrollable filter panel on the left, but Grafana 11.6 has
+no such placement (its filters always sit in a bar above the panels). Newer Grafana releases add a dashboard
+controls menu and sidebar; moving to one would need all 76 panels retested, so it is deferred.
+
+**Testing:** `tests/test_dashboards.py` skips row headers and also runs the panels stored inside collapsed rows
+(76 panel queries pass, plus the annotation query). Every dashboard was rendered and inspected at 1920x1080.
 
 ## Progress log
 
@@ -1001,6 +1053,13 @@ Also required by the plan (status 2026-11-21, after the dashboards were built):
 - Rehearsed both refreshes end to end on a clone (decision 23), fixed two performance problems it exposed
   (scratch directory on a bind mount; verify re-reading every source file) and re-ran: about 2 minutes
   per refresh instead of 7-8. All five test suites pass. Real system verified untouched afterwards.
+
+### 2026-11-22 - Dashboard redesign and one-screen layout
+
+- Redesigned all seven dashboards after a usability review (decision 24): semantic colours, no clipped text,
+  fitted time axes, a filter-aware heat map, a "What failed?" table, and a one-screen layout with two key charts
+  per business dashboard and collapsed detail sections. Filters stay in the top bar (Grafana 11.6 limit).
+  `tests/test_dashboards.py` handles collapsed rows; 76 panel queries pass.
 
 ## Open decisions and next steps
 

@@ -76,9 +76,18 @@ def stat(title, sql, p, desc, unit=None, decimals=None, thresholds=None, mapping
 
 def bars(title, sql, p, desc, color=CYAN, horizontal=True, stacked=False, series_colors=None,
          unit=None, x_label_rotation=0, legend=False, show_value="auto", thresholds=None,
-         threshold_style=None, bar_width=0.7, decimals=None, soft_max=None):
-    """Bars on one baseline. Single series -> one colour; stacked series keep entity colours."""
+         threshold_style=None, bar_width=0.5, decimals=None, soft_max=None, x_label_spacing=0,
+         color_by=None):
+    """Bars on one baseline. Single series -> one colour; stacked series keep entity colours.
+    `color_by=(field, [(value, colour), ...])` colours each bar from a hidden numeric field, so one
+    series can carry entity colours (channel, cold chain) without stacking empty segments."""
     overrides = [color_override(n, c) for n, c in (series_colors or {}).items()]
+    if color_by:
+        field, cb_steps = color_by
+        overrides.append(text_override(field, **{
+            "color": {"mode": "thresholds"},
+            "thresholds": {"mode": "absolute", "steps": [{"color": c, "value": v} for v, c in cb_steps]},
+            "custom.hideFrom": {"legend": True, "tooltip": True, "viz": True}}))
     steps = [{"color": c, "value": v} for v, c in thresholds] if thresholds else [{"color": "text", "value": None}]
     colour = {"mode": "thresholds"} if thresholds else {"mode": "fixed", "fixedColor": color}
     return {"id": _id(), "type": "barchart", "title": title, "description": desc, "gridPos": p,
@@ -98,10 +107,11 @@ def bars(title, sql, p, desc, color=CYAN, horizontal=True, stacked=False, series
             "options": {"orientation": "horizontal" if horizontal else "vertical",
                         "showValue": show_value, "stacking": "normal" if stacked else "none",
                         "groupWidth": 0.7, "barWidth": bar_width, "barRadius": 0.15, "fullHighlight": False,
-                        "xTickLabelRotation": x_label_rotation, "xTickLabelSpacing": 0,
+                        "xTickLabelRotation": x_label_rotation, "xTickLabelSpacing": x_label_spacing,
                         "legend": {"showLegend": legend, "displayMode": "list", "placement": "bottom",
                                    "calcs": []},
-                        "tooltip": {"mode": "single", "sort": "none"}}}
+                        "tooltip": {"mode": "single", "sort": "none"},
+                        **({"colorByField": color_by[0]} if color_by else {})}}
 
 
 def series(title, sql, p, desc, color=CYAN, unit=None, by_name_colors=None, legend=False,
@@ -131,7 +141,8 @@ def series(title, sql, p, desc, color=CYAN, unit=None, by_name_colors=None, lege
 
 
 def trend(title, sql, p, desc, x="month", x_unit="time:MMM YY", unit=None, styles=None, soft_min=None,
-          soft_max=None, thresholds=None, threshold_style=None, legend=False, color=CYAN, decimals=None):
+          soft_max=None, thresholds=None, threshold_style=None, legend=False, color=CYAN, decimals=None,
+          as_bars=False, stacked=False, banded=False):
     """Line/area chart on a numeric x axis (epoch milliseconds, formatted as dates).
 
     Unlike a time series it fits its x axis to the data instead of the dashboard time range, so a
@@ -144,11 +155,15 @@ def trend(title, sql, p, desc, x="month", x_unit="time:MMM YY", unit=None, style
     return {"id": _id(), "type": "trend", "title": title, "description": desc, "gridPos": p,
             "datasource": DS, "targets": [target(sql)],
             "fieldConfig": {"defaults": {
-                "color": {"mode": "fixed", "fixedColor": color},
-                "custom": {"drawStyle": "line", "lineWidth": 2, "lineInterpolation": "linear",
-                           "fillOpacity": 0, "showPoints": "auto", "pointSize": 6, "spanNulls": True,
+                "color": {"mode": "thresholds"} if banded else {"mode": "fixed", "fixedColor": color},
+                "custom": {"drawStyle": "bars" if as_bars else "line", "lineWidth": 0 if as_bars else 2,
+                           "lineInterpolation": "linear", "barAlignment": 0,
+                           "fillOpacity": 90 if as_bars else 0, "showPoints": "never" if as_bars else "auto",
+                           "pointSize": 6, "spanNulls": True,
+                           "stacking": {"mode": "normal" if stacked else "none", "group": "A"},
                            "axisGridShow": True, "axisBorderShow": False, "axisPlacement": "auto",
-                           "scaleDistribution": {"type": "linear"}, "gradientMode": "none",
+                           "scaleDistribution": {"type": "linear"},
+                           "gradientMode": "scheme" if banded else "none",
                            **({"axisSoftMin": soft_min} if soft_min is not None else {}),
                            **({"axisSoftMax": soft_max} if soft_max is not None else {}),
                            **({"thresholdsStyle": {"mode": threshold_style}} if threshold_style else {}),
@@ -199,7 +214,7 @@ def status_override(column: str) -> dict:
 def gauge_override(column: str, color: str, **props) -> dict:
     """Table cell drawn as an inline horizontal bar (gradient) with the number on it."""
     return text_override(column, **{"custom.cellOptions": {"type": "gauge", "mode": "gradient", "valueDisplayMode": "text"},
-                                    "color": {"mode": "fixed", "fixedColor": color}, **props})
+                                    "color": {"mode": "fixed", "fixedColor": color}, "fieldMinMax": True, **props})
 
 
 def threshold_text_override(column: str, steps: list, **props) -> dict:
@@ -223,8 +238,44 @@ def _links() -> list[dict]:
             {**base, "title": "Pipeline", "tags": ["pharma-sdi"]}]
 
 
+def layout(panels: list[dict], spec: dict[str, tuple]) -> list[dict]:
+    """Place panels by title (prefix match): spec maps a title prefix to (x, y, w, h). Stat tiles not
+    listed become a compact 3-high row at the top."""
+    for p in panels:
+        for prefix, (x, y, w, h) in spec.items():
+            if p["title"].startswith(prefix):
+                p["gridPos"] = {"x": x, "y": y, "w": w, "h": h}
+                break
+        else:
+            if p["type"] == "stat":
+                p["gridPos"] = {**p["gridPos"], "y": 0, "h": 3}
+    return panels
+
+
+def with_sections(panels: list[dict], sections) -> list[dict]:
+    """Insert full-width section headers. `sections` is [(y, title)] or [(y, title, collapsed)] in the
+    panel grid as written; panels at or below a header's y move down one row per header above them.
+    A collapsed section hides its panels until the header is clicked (they are stored inside the row)."""
+    if not sections:
+        return panels
+    sections = sorted((s if len(s) == 3 else (*s, False)) for s in sections)
+    rows = [{"id": _id(), "type": "row", "title": title, "collapsed": collapsed, "panels": [],
+             "gridPos": {"x": 0, "y": sy + i, "w": 24, "h": 1}} for i, (sy, title, collapsed) in enumerate(sections)]
+    top = []
+    for p in sorted(panels, key=lambda p: (p["gridPos"]["y"], p["gridPos"]["x"])):
+        y = p["gridPos"]["y"]
+        above = [i for i, (sy, _, _) in enumerate(sections) if sy <= y]     # headers at or above this panel
+        p["gridPos"] = {**p["gridPos"], "y": y + len(above)}
+        if above and sections[above[-1]][2]:                                # its section is collapsed
+            rows[above[-1]]["panels"].append(p)
+        else:
+            top.append(p)
+    return sorted(top + rows, key=lambda p: (p["gridPos"]["y"], p["gridPos"]["x"]))
+
+
 def dashboard(uid, title, description, panels, tags=("pharma-sdi",), templating=None,
-              annotations=None, time=None, refresh="30s"):
+              annotations=None, time=None, refresh="30s", sections=None):
+    panels = with_sections(panels, sections)
     return {"uid": uid, "title": title, "description": description, "tags": list(tags),
             "timezone": "utc", "schemaVersion": 39, "version": 1, "editable": False,
             "graphTooltip": 1, "refresh": refresh, "time": time or {"from": "now-90d", "to": "now"},
@@ -277,13 +328,14 @@ def batch_ingestion() -> dict:
                  FROM staging.ingest_batch WHERE {OK_STATUS} AND {t}
                  ORDER BY rows_loaded DESC LIMIT 12""", pos(12, 4, 12, 9),
              "Records successfully loaded from each file (row count of the data read).", unit="locale"),
-        series("Load speed by source (rows per second)",
-               f"""SELECT started_at AS time, source_name AS metric, round(rows_loaded / duration_seconds) AS speed
-                   FROM staging.ingest_batch WHERE {OK_STATUS} AND duration_seconds > 0 AND {t}
-                   ORDER BY 1""", pos(0, 13, 12, 8),
-               "Rows loaded divided by load duration, for each batch, by source. Each source keeps "
-               "its colour on every dashboard.", unit="suffix: rows/s", legend=True,
-               by_name_colors={k: v for k, v in DOMAIN_COLOR.items() if "_" in k}),
+        bars("Load speed per file (rows per second)",
+             f"""SELECT file_name || ' (#' || batch_id || ')' AS batch,
+                        round(rows_loaded / duration_seconds) AS "Rows per second"
+                 FROM staging.ingest_batch WHERE {OK_STATUS} AND duration_seconds > 0 AND {t}
+                 ORDER BY batch_id DESC LIMIT 12""", pos(0, 13, 12, 8),
+             "Rows loaded divided by load duration, newest file first. Small files look slow because "
+             "fixed start-up cost dominates; compare files of similar size.", unit="locale",
+             show_value="always"),
         table("Data-quality findings by rule",
               """SELECT source_name AS source, severity, rule, count(*) AS rows
                  FROM staging.dq_issue GROUP BY 1, 2, 3 ORDER BY 4 DESC""", pos(12, 13, 12, 8),
@@ -295,11 +347,20 @@ def batch_ingestion() -> dict:
                         started_at AS started
                  FROM staging.ingest_batch ORDER BY batch_id DESC LIMIT 25""", pos(0, 21, 24, 9),
               "Every ingestion attempt, newest first (the table behind the charts above).",
-              overrides=[status_override("status"), text_override("file", **{"custom.width": 250}),
-                         text_override("rows_read", unit="locale"), text_override("rows_loaded", unit="locale")]),
+              overrides=[status_override("status"), text_override("batch_id", **{"custom.width": 80}),
+                         text_override("source", **{"custom.width": 140}),
+                         text_override("file", **{"custom.width": 280}),
+                         text_override("trigger", **{"custom.width": 90}),
+                         text_override("status", **{"custom.width": 150}),
+                         text_override("rows_read", unit="locale", **{"custom.width": 110}),
+                         text_override("rows_loaded", unit="locale", **{"custom.width": 110}),
+                         text_override("malformed", **{"custom.width": 95}),
+                         text_override("seconds", **{"custom.width": 90})]),
     ]
     return dashboard("de-batch-ingestion", "Data engineering: batch ingestion",
-                     "Load duration, rows and success rate for every source file staged.", panels)
+                     "Load duration, rows and success rate for every source file staged.", panels,
+                     sections=[(4, "Which files took longest, and how big were they?"),
+                               (13, "Load speed and data quality"), (21, "Every batch, newest first")])
 
 
 # ------------------------------------------------------------ 2. storage & coverage
@@ -378,7 +439,9 @@ def storage() -> dict:
               overrides=[text_override("rows", unit="locale")]),
     ]
     return dashboard("de-storage", "Data engineering: storage and coverage",
-                     "Rows, storage footprint and date coverage of the staging area and warehouse.", panels)
+                     "Rows, storage footprint and date coverage of the staging area and warehouse.", panels,
+                     sections=[(4, "How big is the warehouse?"), (13, "Is every month covered?"),
+                               (18, "Every table")])
 
 
 # ---------------------------------------------------------------- 3. query performance
@@ -389,44 +452,61 @@ def query_performance() -> dict:
              f"SELECT round(avg(duration_ms)::numeric, 1) FROM mart.etl_query_log WHERE status = 'ok' AND {t}",
              pos(0, 0, 6, 4), "Mean execution time of the analytical queries (wall-clock around the "
              "database call).", unit="ms"),
-        stat("Slowest query",
+        stat("Slowest single run",
              f"SELECT round(max(duration_ms)::numeric, 1) FROM mart.etl_query_log WHERE status = 'ok' AND {t}",
-             pos(6, 0, 6, 4), "Longest single execution in the period.", unit="ms"),
+             pos(6, 0, 6, 4), "Longest single execution in the period; the table below shows which query.",
+             unit="ms"),
         stat("Queries run",
              f"SELECT count(*) FROM mart.etl_query_log WHERE {t}", pos(12, 0, 6, 4),
              "Analytical queries executed (each verification run executes the full query set)."),
         stat("Query error rate",
              f"""SELECT round(100.0 * count(*) FILTER (WHERE status = 'error') / NULLIF(count(*), 0), 1)
                  FROM mart.etl_query_log WHERE {t}""", pos(18, 0, 6, 4),
-             "Failed queries / executed queries x 100 (syntax errors, missing columns, timeouts).",
+             "Failed queries / executed queries x 100 over the selected period, including errors that "
+             "were later fixed: the 'What failed?' table below shows when each one happened.",
              unit="percent", thresholds=[(None, GOOD), (0.1, WARN), (5, CRIT)]),
         bars("Average execution time per query (ms)",
              f"""SELECT query_name AS query, round(avg(duration_ms)::numeric, 1) AS "Average time (ms)"
                  FROM mart.etl_query_log WHERE status = 'ok' AND {t}
                  GROUP BY 1 ORDER BY 2 DESC""", pos(0, 4, 12, 10),
              "Slowest query first: a long bar points at an unoptimised join or a missing summary table.",
-             unit="ms"),
-        series("Total query time per verification run (ms)",
-               f"""SELECT min(started_at_utc) AS time, round(sum(duration_ms)::numeric) AS "Total query time (ms)"
-                   FROM mart.etl_query_log WHERE {t} GROUP BY run_id ORDER BY 1""", pos(12, 4, 12, 10),
-               "One point per run of the full query set. A rise after a refresh shows the cost of "
-               "the added data.", unit="ms"),
-        series("Queries executed per day",
-               f"""SELECT date_trunc('day', started_at_utc) AS time, count(*) AS "Queries run"
-                   FROM mart.etl_query_log WHERE {t} GROUP BY 1 ORDER BY 1""", pos(0, 14, 12, 8),
-               "Daily count of executed analytical queries.", style="bars"),
-        table("Query statistics",
+             unit="ms", show_value="always"),
+        bars("Total query time per verification run (ms)",
+             f"""SELECT run, "Total query time (ms)" FROM (
+                   SELECT min(started_at_utc) AS started, to_char(min(started_at_utc), 'MM-DD HH24:MI') AS run,
+                          round(sum(duration_ms)::numeric) AS "Total query time (ms)"
+                   FROM mart.etl_query_log WHERE {t} GROUP BY run_id ORDER BY 1 DESC LIMIT 12) r
+                 ORDER BY started""", pos(12, 4, 12, 10),
+             "One bar per run of the full query set (last 12 runs, oldest left). A step up after a refresh "
+             "shows the cost of the added data.", horizontal=False, unit="ms", show_value="always"),
+        table("Every query: runs, time and errors",
               f"""SELECT query_name AS query, count(*) AS runs,
                          round(avg(duration_ms)::numeric, 1) AS "avg ms", round(max(duration_ms)::numeric, 1) AS "max ms",
                          count(*) FILTER (WHERE status = 'error') AS errors, max(row_count) AS "rows returned",
                          max(started_at_utc) AS "last run"
-                  FROM mart.etl_query_log WHERE {t} GROUP BY 1 ORDER BY 3 DESC""", pos(12, 14, 12, 8),
+                  FROM mart.etl_query_log WHERE {t} GROUP BY 1 ORDER BY 3 DESC""", pos(0, 14, 24, 9),
               "The numbers behind the charts: runs, average and worst time, errors and result size per query.",
-              overrides=[text_override("errors", mappings=NONZERO_BAD, **{"custom.cellOptions": {"type": "color-text"}}),
-                         text_override("query", **{"custom.width": 300})]),
+              overrides=[text_override("errors", mappings=NONZERO_BAD, **{"custom.cellOptions": {"type": "color-text"},
+                                                                          "custom.width": 90}),
+                         text_override("query", **{"custom.width": 380}),
+                         text_override("runs", **{"custom.width": 80}),
+                         gauge_override("avg ms", CYAN, unit="ms", min=0, **{"custom.width": 220}),
+                         text_override("max ms", unit="ms", **{"custom.width": 110}),
+                         text_override("rows returned", unit="locale", **{"custom.width": 130})]),
+        table("What failed? Query errors, newest first",
+              f"""SELECT started_at_utc AS "when", query_name AS query, error_message AS error
+                  FROM mart.etl_query_log WHERE status = 'error' AND {t}
+                  ORDER BY started_at_utc DESC LIMIT 20""", pos(0, 23, 24, 6),
+              "Each failed execution with the database's error message. An old error that does not recur in "
+              "later runs has been fixed.", no_value="✔ No query errors in this period",
+              overrides=[text_override("when", **{"custom.width": 200}),
+                         text_override("query", **{"custom.width": 330}),
+                         text_override("error", **{"custom.cellOptions": {"type": "color-text"},
+                                                   "color": {"mode": "fixed", "fixedColor": CRIT}})]),
     ]
     return dashboard("de-query-performance", "Data engineering: query performance",
-                     "Execution time, volume and error rate of the analytical queries.", panels)
+                     "Execution time, volume and error rate of the analytical queries.", panels,
+                     sections=[(4, "Which queries are slow?"), (14, "Every query"), (23, "What failed?")])
 
 
 # ------------------------------------------------------------------ 4. refresh monitor
@@ -460,12 +540,13 @@ def refresh_monitor() -> dict:
              pos(12, 4, 12, 8), "Total rows in the hospital demand fact at each publish. Kept in its own chart: "
              "its scale differs from sales, so the two are never shown on one axis.", horizontal=False,
              unit="locale", show_value="never"),
-        bars("Net sales per month (USD)",
-             """SELECT year_month AS month, round(sum(net_sales_amount_usd), 0) AS "Net sales (USD)"
-                FROM mart.agg_sales_month GROUP BY 1 ORDER BY 1""", pos(0, 12, 24, 9),
+        trend("Net sales per month (USD)",
+             """SELECT extract(epoch FROM to_date(year_month, 'YYYY-MM')) * 1000 AS month,
+                       round(sum(net_sales_amount_usd), 0) AS "Net sales (USD)"
+                FROM mart.agg_sales_month GROUP BY year_month ORDER BY year_month""", pos(0, 12, 24, 9),
              "Net sales by month from the warehouse's monthly aggregate: new months appear after each "
-             "refresh. Jan-Feb 2023 are a ramp-up (sales data starts 2023-01-30).", horizontal=False,
-             unit="currencyUSD", x_label_rotation=-45, show_value="never"),
+             "refresh. Jan-Feb 2023 are a ramp-up (sales data starts 2023-01-30).",
+             unit="currencyUSD", as_bars=True),
         table("Batches, newest first",
               """SELECT batch_id, source_name AS source, file_name AS file, status, rows_loaded,
                         duration_seconds AS seconds, started_at AS started
@@ -474,7 +555,9 @@ def refresh_monitor() -> dict:
               overrides=[status_override("status"), text_override("rows_loaded", unit="locale")]),
     ]
     return dashboard("de-refresh-monitor", "Data engineering: refresh monitor",
-                     "Shows new data arriving: rows, periods and batches after each refresh.", panels)
+                     "Shows new data arriving: rows, periods and batches after each refresh.", panels,
+                     sections=[(4, "Did the last refresh add rows?"), (12, "Which months are loaded?"),
+                               (21, "Files staged, newest first")])
 
 
 def main() -> None:

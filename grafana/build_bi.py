@@ -23,7 +23,7 @@ import json
 
 from build_dashboards import (AQUA, BLUE, CRIT, CYAN, DS, GOOD, ORANGE, OUT, SLATE, WARN, bars,
                               color_override, dashboard, fixed, gauge_override, pos, series, stat,
-                              table, text_override, threshold_text_override, trend)
+                              table, text_override, threshold_text_override, trend, layout)
 
 MUTED, RED = "#898781", "#e66767"                     # de-emphasis gray; diverging pole (dark step)
 CHANNEL_COLORS = {"Retail pharmacy": BLUE, "Hospital pharmacy": ORANGE, "E-commerce": AQUA}
@@ -82,9 +82,35 @@ def short_category(column: str = "m.disease_category") -> str:
     return f"CASE {column} {whens} ELSE {column} END"
 
 
-SHORT_HOSPITAL = "replace(replace(h.hospital_name, 'Medical Center', 'Med Ctr'), 'Hospital', 'Hosp.')"
+SHORT_HOSPITAL = "trim(replace(replace(h.hospital_name, 'Medical Center', 'Med Ctr'), ' Hospital', ''))"
 MONTH_MS = "extract(epoch FROM d.full_date) * 1000"
 SLA_TARGET = 95        # assumed request fill-rate target; the source data defines no SLA
+
+
+def heat_map(sql: str, p: dict) -> dict:
+    """Hospital x disease-category matrix. The query is long (one row per non-zero pair) and Grafana's
+    matrix transformation pivots it, so columns exist only for the categories in the current filter and
+    pairs with no unmet demand stay empty instead of printing zeros."""
+    panel = table("Unfulfilled packs by hospital and disease category", sql, p,
+                  "A heat map: each cell is the unfulfilled packs for one hospital and disease category in the "
+                  "selected period. Colour deepens from amber to coral as unmet demand grows; empty cells mean "
+                  "none. Only hospitals and categories with unmet demand in the current filter appear.",
+                  no_value="–",
+                  overrides=[
+                      {"matcher": {"id": "byRegexp", "options": "^[^\\\\]*$"}, "properties": []},
+                      {"matcher": {"id": "byRegexp", "options": "^(?!.*\\\\).*"}, "properties": [
+                          {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
+                          {"id": "color", "value": {"mode": "thresholds"}},
+                          {"id": "thresholds", "value": {"mode": "absolute", "steps": [
+                              {"color": "#1E293B", "value": None}, {"color": "#78591A", "value": 1},
+                              {"color": "#B7791F", "value": 30}, {"color": "#D9822B", "value": 80},
+                              {"color": "#DC2626", "value": 150}]}},
+                          {"id": "unit", "value": "locale"}, {"id": "custom.align", "value": "center"}]}])
+    panel["transformations"] = [
+        {"id": "groupingToMatrix", "options": {
+            "rowField": "hospital", "columnField": "category", "valueField": "packs", "emptyValue": "null"}},
+        {"id": "organize", "options": {"renameByName": {"hospital\\category": "hospital"}}}]
+    return panel
 
 
 def hospital_demand() -> dict:
@@ -92,8 +118,6 @@ def hospital_demand() -> dict:
         return (f"SELECT d.full_date::timestamp AS time, sum({col}) AS value {H_FROM} "
                 f"GROUP BY d.full_date ORDER BY 1")
 
-    heat_cols = ",\n                         ".join(
-        f"""coalesce(sum(f.unfulfilled_demand_packs) FILTER (WHERE m.disease_category = '{k}'), 0) AS "{v}\"""" for k, v in CATEGORY_SHORT.items())
     panels = [
         # --- headline row: titles kept short enough for a 4-column tile
         stat("Over forecast",
@@ -154,12 +178,13 @@ def hospital_demand() -> dict:
                  {H_FROM} GROUP BY m.disease_category ORDER BY 2 DESC""", pos(14, 4, 10, 9),
              "Variance from summed packs per disease category; positive = consumed more than forecast. "
              "Teal under 1%, amber from 1%, coral from 1.3%: the top three categories are where the "
-             "forecast under-calls most.", unit="percent", decimals=2, show_value="always", bar_width=0.7,
+             "forecast under-calls most.", unit="percent", decimals=2, show_value="always", bar_width=0.45,
              thresholds=[(None, CYAN), (1.0, WARN), (1.3, CRIT)]),
         # --- forecast gaps and shortage timing
         table("Largest forecast gaps by medicine",
               f"""SELECT m.generic_name AS medicine,
-                         sum(f.forecast_demand_packs) AS forecast, sum(f.consumed_quantity_packs) AS consumed,
+                         to_char(sum(f.forecast_demand_packs), 'FM999,999,999') AS forecast,
+                         to_char(sum(f.consumed_quantity_packs), 'FM999,999,999') AS consumed,
                          sum(f.consumed_quantity_packs) - sum(f.forecast_demand_packs) AS "variance (packs)",
                          round(100.0 * (sum(f.consumed_quantity_packs) - sum(f.forecast_demand_packs))
                                / NULLIF(sum(f.forecast_demand_packs), 0), 2) AS "variance (%)",
@@ -172,73 +197,81 @@ def hospital_demand() -> dict:
               "the gap in packs; variance (%) turns amber from 1.5% and coral from 2%. WAPE shows "
               "month-by-month error even where over- and under-forecasts cancel.",
               overrides=[text_override("medicine", **{"custom.width": 160}),
-                         text_override("forecast", unit="locale", **{"custom.width": 90}),
-                         text_override("consumed", unit="locale", **{"custom.width": 90}),
-                         gauge_override("variance (packs)", WARN, unit="locale", min=0, max=3000,
-                                        **{"custom.width": 150}),
+                         text_override("forecast", **{"custom.width": 90, "custom.align": "right"}),
+                         text_override("consumed", **{"custom.width": 90, "custom.align": "right"}),
+                         gauge_override("variance (packs)", WARN, unit="locale", min=0, **{"custom.width": 150}),
                          threshold_text_override("variance (%)", [(None, CYAN), (1.5, WARN), (2.0, CRIT)],
                                                  unit="percent", decimals=2, **{"custom.width": 105}),
                          text_override("WAPE (%)", unit="percent", decimals=2, **{"custom.width": 90})]),
-        bars("Unfulfilled demand by month (packs)",
-             f"""SELECT to_char(d.full_date, 'YYYY-MM') AS month, sum(f.unfulfilled_demand_packs) AS "Unfulfilled packs"
-                 {H_FROM} GROUP BY 1 ORDER BY 1""", pos(14, 13, 10, 11),
-             "Demand that could not be met, per month. Slate under 50 packs, amber from 50, coral from 150; "
-             "the dashed line marks 150 packs. The late-2024 and late-2025 spikes are the shortage peaks.",
-             unit="locale", horizontal=False, x_label_rotation=-45, bar_width=0.75, show_value="never",
-             thresholds=[(None, SLATE), (50, WARN), (150, CRIT)], threshold_style="dashed"),
+        trend("Forecast error by month (WAPE %)",
+              f"""SELECT {MONTH_MS} AS month, round(100.0 * sum(abs(f.consumed_quantity_packs - f.forecast_demand_packs))
+                                / NULLIF(sum(f.consumed_quantity_packs), 0), 2) AS "WAPE (%)"
+                  {H_FROM} GROUP BY d.full_date ORDER BY 1""", pos(14, 13, 10, 11),
+              "Is forecasting getting better or worse? Weighted absolute percentage error per month (lower is "
+              "better). A rising line means forecasts are drifting further from what hospitals used.",
+              unit="percent", decimals=1, color=CYAN),
+        trend("Unfulfilled demand by month (packs)",
+              f"""SELECT {MONTH_MS} AS month, sum(f.unfulfilled_demand_packs) AS "Unfulfilled packs"
+                  {H_FROM} GROUP BY d.full_date ORDER BY 1""", pos(0, 24, 12, 9),
+              "Demand that could not be met, per month. Each bar is banded by height: slate under 50 packs, "
+              "amber from 50, coral from 150; the dashed lines mark 50 and 150 packs. The late-2024 and "
+              "late-2025 spikes are the shortage peaks.",
+              unit="locale", as_bars=True, banded=True, threshold_style="dashed",
+              thresholds=[(None, SLATE), (50, WARN), (150, CRIT)]),
         # --- where shortages concentrate
-        table("Unfulfilled packs: hospital x disease category",
-              f"""SELECT {SHORT_HOSPITAL} AS hospital, {heat_cols},
-                         coalesce(sum(f.unfulfilled_demand_packs), 0) AS "Total"
-                  {H_FROM} GROUP BY h.hospital_name ORDER BY "Total" DESC""", pos(0, 24, 24, 12),
-              "A heat map: each cell is the unfulfilled packs for one hospital and disease category in the "
-              "selected period. Darker amber/coral = more unmet demand; neutral = none.",
-              overrides=[text_override("hospital", **{"custom.width": 200}),
-                         {"matcher": {"id": "byRegexp", "options": "^(?!hospital$).*"}, "properties": [
-                             {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
-                             {"id": "color", "value": {"mode": "thresholds"}},
-                             {"id": "thresholds", "value": {"mode": "absolute", "steps": [
-                                 {"color": "#1E293B", "value": None}, {"color": "#78591A", "value": 1},
-                                 {"color": "#B7791F", "value": 30}, {"color": "#D9822B", "value": 80},
-                                 {"color": "#DC2626", "value": 150}]}},
-                             {"id": "unit", "value": "locale"}, {"id": "custom.align", "value": "center"}]}]),
+        heat_map(f"""SELECT {SHORT_HOSPITAL} AS hospital, {short_category()} AS category,
+                         sum(f.unfulfilled_demand_packs) AS packs
+                  {H_FROM} GROUP BY h.hospital_name, m.disease_category
+                  HAVING sum(f.unfulfilled_demand_packs) > 0
+                  ORDER BY sum(sum(f.unfulfilled_demand_packs)) OVER (PARTITION BY h.hospital_name) DESC,
+                           h.hospital_name""", pos(0, 33, 24, 11)),
         table("Unfulfilled demand hotspots (top 15 hospital-medicine pairs)",
-              f"""SELECT h.hospital_name AS hospital, m.generic_name AS medicine,
+              f"""SELECT {SHORT_HOSPITAL} AS hospital, m.generic_name AS medicine,
                          sum(f.unfulfilled_demand_packs) AS "unfulfilled packs",
                          round(100.0 * sum(f.received_quantity_packs)
                                / NULLIF(sum(f.requested_quantity_packs), 0), 1) AS "fill rate (%)",
                          sum(f.stockout_days) AS "stockout days"
                   {H_FROM} GROUP BY 1, 2 HAVING sum(f.unfulfilled_demand_packs) > 0
-                  ORDER BY 3 DESC, 5 DESC LIMIT 15""", pos(0, 36, 14, 12),
+                  ORDER BY 3 DESC, 5 DESC LIMIT 15""", pos(0, 44, 14, 12),
               "The fifteen hospital and medicine pairs with the most unmet demand. The bar shows unfulfilled "
               "packs; fill rate is amber below 95% and coral below 90%.",
               no_value="No unfulfilled demand in this selection",
-              overrides=[text_override("hospital", **{"custom.width": 240}),
+              overrides=[text_override("hospital", **{"custom.width": 185}),
                          text_override("medicine", **{"custom.width": 170}),
-                         gauge_override("unfulfilled packs", CRIT, unit="locale", min=0, max=900,
-                                        **{"custom.width": 140}),
+                         gauge_override("unfulfilled packs", CRIT, unit="locale", min=0, **{"custom.width": 165}),
                          threshold_text_override("fill rate (%)", [(None, CRIT), (90, WARN), (SLA_TARGET, GOOD)],
-                                                 unit="percent", decimals=1),
-                         threshold_text_override("stockout days", [(None, "text"), (10, WARN), (30, CRIT)])]),
+                                                 unit="percent", decimals=1, **{"custom.width": 110}),
+                         threshold_text_override("stockout days", [(None, "text"), (10, WARN), (30, CRIT)],
+                                                 **{"custom.width": 130})]),
         bars("Stockout days by hospital (hospitals with at least one)",
              f"""SELECT h.hospital_name AS hospital, sum(f.stockout_days) AS "Stockout days"
-                 {H_FROM} GROUP BY 1 HAVING sum(f.stockout_days) > 0 ORDER BY 2 DESC""", pos(14, 36, 10, 12),
+                 {H_FROM} GROUP BY 1 HAVING sum(f.stockout_days) > 0 ORDER BY 2 DESC""", pos(14, 44, 10, 12),
              "Days with a stockout, by hospital, summed over medicines and months. Slate 1-9 days, amber "
              "10-29, coral 30 or more. Hospitals with no stockout days are not drawn (see the heat map).",
-             unit="locale", show_value="always", bar_width=0.7,
+             unit="locale", show_value="always", bar_width=0.45,
              thresholds=[(None, SLATE), (10, WARN), (30, CRIT)]),
         trend("Request fill rate by month (%)",
               f"""SELECT {MONTH_MS} AS month, round(100.0 * sum(f.received_quantity_packs)
                                 / NULLIF(sum(f.requested_quantity_packs), 0), 2) AS "Fill rate (%)"
-                  {H_FROM} GROUP BY d.full_date ORDER BY 1""", pos(0, 48, 24, 8),
+                  {H_FROM} GROUP BY d.full_date ORDER BY 1""", pos(12, 24, 12, 9),
               f"Packs received / packs requested, by month, on a 88-96% axis so the movement is shown in honest "
               f"proportion. The dashed green line is the assumed {SLA_TARGET}% target: the rate stays about "
               "2 points below it.", unit="percent", decimals=1, soft_min=88, soft_max=96, color=WARN,
               thresholds=[(None, WARN), (SLA_TARGET, GOOD)], threshold_style="dashed"),
     ]
+
+    layout(panels, {
+        "Forecast vs consumption": (0, 3, 12, 15), "Unfulfilled demand by month": (12, 3, 12, 15),
+        "Over/under forecast": (0, 18, 10, 9), "Forecast error by month": (10, 18, 14, 9),
+        "Largest forecast gaps": (0, 27, 24, 11), "Request fill rate by month": (0, 38, 24, 8),
+        "Unfulfilled packs by hospital": (0, 46, 24, 11), "Unfulfilled demand hotspots": (0, 57, 14, 12),
+        "Stockout days by hospital": (14, 57, 10, 12)})
     return dashboard("bi-hospital-demand", "Sales and demand: hospital forecast vs consumption",
                      "How well hospital demand was forecast, and where it went unmet.", panels,
-                     tags=("pharma-bi",), templating=[V_CLASS, V_HOSPITAL], time=TIME_ALL)
+                     tags=("pharma-bi",), templating=[V_CLASS, V_HOSPITAL], time=TIME_ALL,
+                     sections=[(18, "Forecast detail: which categories and medicines are off, and is it improving?", True),
+                               (38, "Fill rate against the 95% target", True),
+                               (46, "Where should we act? Hospitals, categories and medicines with unmet demand", True)])
 
 
 # ----------------------------------------------------------------------- 2. channel revenue
@@ -261,6 +294,9 @@ LATEST = "(SELECT max((year_month || '-01')::date) FROM mart.agg_sales_month)"
 def channel_revenue() -> dict:
     ch_cols = ", ".join(
         f"""sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = '{c}') AS "{c}\"""" for c in CHANNEL_COLORS)
+
+    channel_code = ("CASE channel " + " ".join(f"WHEN '{c}' THEN {i}" for i, c in enumerate(CHANNEL_COLORS, 1))
+                    + " END")
     panels = [
         stat("Net sales", f"SELECT coalesce(sum(a.net_sales_amount_usd), 0) {S_FROM}", pos(0, 0, 4, 4),
              "Sum of source-reported net sales (gross less discount), in US dollars.", unit="currencyUSD"),
@@ -287,29 +323,30 @@ def channel_revenue() -> dict:
                           / NULLIF(sum(net) FILTER (WHERE m <= {LATEST} - interval '12 months'
                                                       AND m > {LATEST} - interval '24 months'), 0), 1) FROM w""",
              pos(20, 0, 4, 4),
-             "Net sales in the latest 12 months vs the 12 months before, for the selected classes and "
-             "channels (ignores the time picker; the ramp-up months fall outside both windows).",
-             unit="percent", decimals=1),
-        bars("Net sales by month and channel (USD)",
-             f"""SELECT a.year_month AS month, {ch_cols}
-                 {S_FROM} GROUP BY 1 ORDER BY 1""", pos(0, 4, 16, 9),
-             "Stacked monthly net sales for each channel. Jan-Feb 2023 are the sales ramp-up (data starts "
-             "2023-01-30). The tall bars follow large pharmacy deliveries in the source data. The axis ends "
-             "at the last month with data.", horizontal=False, stacked=True, legend=True, unit="currencyUSD",
-             series_colors=CHANNEL_COLORS, x_label_rotation=-45, show_value="never", bar_width=0.8),
+             "Net sales in the latest 12 months vs the 12 months before, for the selected categories and "
+             "channels (ignores the time picker; the ramp-up months fall outside both windows). Green when "
+             "growing, red when shrinking.", unit="percent", decimals=1, thresholds=[(None, CRIT), (0, GOOD)]),
+        trend("Net sales by month and channel (USD)",
+              f"""SELECT extract(epoch FROM to_date(a.year_month, 'YYYY-MM')) * 1000 AS month, {ch_cols}
+                  {S_FROM} GROUP BY a.year_month ORDER BY a.year_month""", pos(0, 4, 16, 9),
+              "Stacked monthly net sales for each channel. Jan-Feb 2023 are the sales ramp-up (data starts "
+              "2023-01-30). The tall bars (Dec 2023, Jan 2024, Jan 2025) are large bulk pharmacy deliveries in "
+              "the source data, not seasonality.", unit="currencyUSD", legend=True, as_bars=True, stacked=True,
+              styles={c: fixed(col) for c, col in CHANNEL_COLORS.items()}),
         bars("Revenue share by channel (%)",
-             f"""SELECT a.channel_group AS channel,
-                        round(100.0 * sum(a.net_sales_amount_usd) / sum(sum(a.net_sales_amount_usd)) OVER (), 1)
-                          AS "Share of net sales (%)"
-                 {S_FROM} GROUP BY 1 ORDER BY 2 DESC""", pos(16, 4, 8, 9),
-             "Each channel's share of net sales in the period, largest first.", unit="percent", decimals=1,
-             show_value="always", soft_max=70),
+             f"""SELECT channel, share AS "Share of net sales (%)", {channel_code} AS colour FROM (
+                   SELECT a.channel_group AS channel,
+                          round(100.0 * sum(a.net_sales_amount_usd) / sum(sum(a.net_sales_amount_usd)) OVER (), 1) AS share
+                   {S_FROM} GROUP BY 1) s ORDER BY share DESC""", pos(16, 4, 8, 9),
+             "Each channel's share of net sales in the period, largest first, in the channel's colour.",
+             unit="percent", decimals=1, show_value="always", soft_max=75,
+             color_by=("colour", [(None, AQUA), (1, BLUE), (2, ORANGE), (3, AQUA)])),
         bars("Net sales per year by channel (USD)",
              f"""SELECT 'Year ' || left(a.year_month, 4) AS year, {ch_cols}
                  {S_FROM} GROUP BY 1 ORDER BY 1""", pos(0, 13, 12, 9),
              "Yearly net sales, stacked by channel. The first year starts in the ramp-up, so it is "
              "understated.", horizontal=False, stacked=True, legend=True, unit="currencyUSD",
-             series_colors=CHANNEL_COLORS, show_value="never"),
+             series_colors=CHANNEL_COLORS, show_value="never", bar_width=0.6),
         table("Growth by channel: last 12 months vs the 12 before",
               f"""WITH w AS (SELECT a.channel_group AS channel, a.net_sales_amount_usd AS net, (a.year_month || '-01')::date AS m
                             {S_FROM_ALL})
@@ -323,8 +360,9 @@ def channel_revenue() -> dict:
                                                           AND m > {LATEST} - interval '24 months'), 0), 1) AS "growth (%)"
                   FROM w GROUP BY 1 ORDER BY 3 DESC""", pos(12, 13, 12, 9),
               "Compares the latest 12 months with the previous 12, ignoring the time picker. The 2023 "
-              "ramp-up months are outside both windows, so they cannot inflate growth.",
-              overrides=[text_override("previous 12 months (USD)", unit="currencyUSD"),
+              "ramp-up months are outside both windows, so they cannot inflate growth. The bar shows growth.",
+              overrides=[text_override("channel", **{"custom.width": 150}),
+                         text_override("previous 12 months (USD)", unit="currencyUSD"),
                          text_override("latest 12 months (USD)", unit="currencyUSD"),
                          threshold_text_override("growth (%)", [(None, CRIT), (0, GOOD)], unit="percent",
                                                  decimals=1)]),
@@ -333,19 +371,29 @@ def channel_revenue() -> dict:
                          round(sum(a.net_sales_amount_usd), 0) AS "net sales (USD)",
                          round(100.0 * sum(a.gross_margin_usd) / NULLIF(sum(a.net_sales_amount_usd), 0), 2) AS "gross margin (%)",
                          round(100.0 * sum(a.returned_quantity_packs) / NULLIF(sum(a.quantity_sold_packs), 0), 2) AS "returned packs (%)"
-                  {S_FROM} GROUP BY 1, 2 ORDER BY 2, 1""", pos(0, 22, 12, 11),
+                  {S_FROM} GROUP BY 1, 2 ORDER BY 1, 2""", pos(0, 22, 12, 11),
               "Margin rate is the ratio of summed margin to summed net sales. It moves by only a few "
-              "hundredths of a point between channels and years, so it is shown as a table.",
-              overrides=[text_override("net sales (USD)", unit="currencyUSD")]),
+              "hundredths of a point between channels and years (a fixed markup in the source), so margin "
+              "does not separate the channels; revenue share and growth do.",
+              overrides=[text_override("net sales (USD)", unit="currencyUSD"),
+                         text_override("gross margin (%)", unit="percent", decimals=2),
+                         text_override("returned packs (%)", unit="percent", decimals=2)]),
         bars("Net sales by disease category (USD)",
              f"""SELECT {short_category()} AS "disease category", round(sum(a.net_sales_amount_usd), 0) AS "Net sales (USD)"
                  {S_FROM} GROUP BY m.disease_category ORDER BY 2 DESC""", pos(12, 22, 12, 11),
              "Net sales by disease category in the selection, largest first.", unit="currencyUSD",
              show_value="always"),
     ]
+
+    layout(panels, {
+        "Net sales by month and channel": (0, 3, 16, 15), "Revenue share by channel": (16, 3, 8, 15),
+        "Net sales per year": (0, 18, 12, 9), "Growth by channel": (12, 18, 12, 9),
+        "Gross margin and returns": (0, 27, 12, 11), "Net sales by disease category": (12, 27, 12, 11)})
     return dashboard("bi-channel-revenue", "Sales and demand: channel revenue and margin",
                      "Where revenue comes from: retail pharmacies, hospital pharmacies and e-commerce.",
-                     panels, tags=("pharma-bi",), templating=[V_CLASS, V_CHANNEL], time=TIME_ALL)
+                     panels, tags=("pharma-bi",), templating=[V_CLASS, V_CHANNEL], time=TIME_ALL,
+                     sections=[(18, "Is it growing?", True),
+                               (27, "Margin, returns and category mix", True)])
 
 
 # ---------------------------------------------------------------------------- 3. movers
@@ -363,99 +411,96 @@ ranked AS (
   FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id
   WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category))"""
 
-MOVER_COLORS = {"Ambient": BLUE, "Cold chain": ORANGE}
-
-
 def movers() -> dict:
-    def split(col: str) -> str:
-        return (f"""CASE WHEN NOT cold_chain_flag THEN {col} END AS "Ambient",
-                   CASE WHEN cold_chain_flag THEN {col} END AS "Cold chain\"""")
-
     panels = [
-        stat("Medicines", f"{MOVERS_CTE} SELECT count(*) FROM ranked", pos(0, 0, 4, 4),
-             "Medicines matching the disease-category filter, including those with no sales in the window.",
-             unit="locale"),
-        stat("Cold-chain SKUs", f"{MOVERS_CTE} SELECT count(*) FILTER (WHERE cold_chain_flag) FROM ranked",
-             pos(4, 0, 4, 4), "Medicines that need cold-chain storage, in the current selection.", unit="locale"),
+        stat("Net sales", f"{MOVERS_CTE} SELECT round(sum(net)) FROM ranked", pos(0, 0, 4, 4),
+             "Net sales of the medicines in view over the selected window (last N months of data).",
+             unit="currencyUSD"),
+        stat("Packs sold", f"{MOVERS_CTE} SELECT sum(packs) FROM ranked", pos(4, 0, 4, 4),
+             "Packs sold over the selected window.", unit="locale"),
         stat("Cold sales %",
              f"""{MOVERS_CTE} SELECT round(100.0 * sum(net) FILTER (WHERE cold_chain_flag) / NULLIF(sum(net), 0), 1)
                  FROM ranked""", pos(8, 0, 4, 4),
              "Net sales of cold-chain medicines / all net sales in the window x 100.", unit="percent",
-             decimals=1),
+             decimals=1, thresholds=[(None, ORANGE)]),
         stat("Cold packs %",
              f"""{MOVERS_CTE} SELECT round(100.0 * sum(packs) FILTER (WHERE cold_chain_flag) / NULLIF(sum(packs), 0), 1)
                  FROM ranked""", pos(12, 0, 4, 4),
              "Packs of cold-chain medicines / all packs in the window x 100. Compare with the share of "
              "net sales beside it: cold-chain medicines sell few packs but earn much more per pack.",
-             unit="percent", decimals=1),
+             unit="percent", decimals=1, thresholds=[(None, ORANGE)]),
         stat("Fastest mover", f"{MOVERS_CTE} SELECT generic_name FROM ranked ORDER BY fast_rank, generic_name LIMIT 1",
              pos(16, 0, 4, 4), "Medicine with the most packs sold in the window.", text_field=True),
         stat("Slowest mover", f"{MOVERS_CTE} SELECT generic_name FROM ranked ORDER BY slow_rank, generic_name LIMIT 1",
              pos(20, 0, 4, 4), "Medicine with the fewest packs sold in the window (ties: first by name).",
              text_field=True),
-        bars("Fast movers: top 10 by packs sold",
-             f"""{MOVERS_CTE} SELECT generic_name AS medicine, {split('packs')}
+        bars("Fast movers: top 10 by packs sold (orange = cold chain)",
+             f"""{MOVERS_CTE} SELECT generic_name AS medicine, packs AS "Packs sold", cold_chain_flag::int AS cold
                  FROM ranked WHERE fast_rank <= 10 ORDER BY fast_rank, generic_name LIMIT 10""",
              pos(0, 4, 12, 10),
              "The ten medicines with the most packs sold in the selected window. Cold-chain medicines are "
-             "orange.", stacked=True, legend=True, unit="locale", series_colors=MOVER_COLORS, show_value="always"),
-        bars("Slow movers: bottom 10 by packs sold",
-             f"""{MOVERS_CTE} SELECT generic_name AS medicine, {split('packs')}
+             "orange.", unit="locale", show_value="always", color_by=("cold", [(None, BLUE), (1, ORANGE)])),
+        bars("Slow movers: bottom 10 by packs sold (orange = cold chain)",
+             f"""{MOVERS_CTE} SELECT generic_name AS medicine, packs AS "Packs sold", cold_chain_flag::int AS cold
                  FROM ranked WHERE slow_rank <= 10 ORDER BY slow_rank, generic_name LIMIT 10""",
              pos(12, 4, 12, 10),
              "The ten medicines with the fewest packs sold, including any with no sales. There is no "
-             "fixed threshold for slow: this is a ranking.", stacked=True, legend=True, unit="locale",
-             series_colors=MOVER_COLORS, show_value="always"),
-        {"id": 0, "type": "trend", "title": "Volume vs revenue by medicine",
-         "description": "Each point is a medicine: packs sold (left to right) against net sales (bottom to "
-                        "top) in the window. Cold-chain medicines (orange) sit high for their volume: few "
-                        "packs, much more revenue per pack.",
-         "gridPos": pos(0, 14, 14, 11), "datasource": DS,
-         "targets": [{"datasource": DS, "editorMode": "code", "format": "table", "rawQuery": True, "refId": "A",
-                      "rawSql": f"""{MOVERS_CTE} SELECT packs AS "Packs sold", {split('net')} FROM ranked ORDER BY 1"""}],
-         "fieldConfig": {"defaults": {"custom": {"drawStyle": "points", "lineWidth": 0, "showPoints": "always",
-                                                 "pointSize": 11, "fillOpacity": 85, "spanNulls": False,
-                                                 "axisPlacement": "auto", "axisGridShow": True,
-                                                 "axisBorderShow": False, "gradientMode": "none",
-                                                 "hideFrom": {"legend": False, "tooltip": False, "viz": False}},
-                                      "color": {"mode": "fixed", "fixedColor": BLUE}, "unit": "currencyUSD",
-                                      "noValue": "No data"},
-                         "overrides": [color_override("Ambient", BLUE), color_override("Cold chain", ORANGE),
-                                       text_override("Packs sold", unit="locale")]},
-         "options": {"xField": "Packs sold",
-                     "legend": {"showLegend": True, "displayMode": "list", "placement": "bottom", "calcs": []},
-                     "tooltip": {"mode": "multi", "sort": "none"}}},
+             "fixed threshold for slow: this is a ranking. Slow is not low value: see the revenue ranking below.",
+             unit="locale", show_value="always", color_by=("cold", [(None, BLUE), (1, ORANGE)])),
+        bars("Top 10 by net sales, USD (orange = cold chain)",
+             f"""{MOVERS_CTE} SELECT generic_name AS medicine, round(net) AS "Net sales (USD)", cold_chain_flag::int AS cold
+                 FROM ranked ORDER BY net DESC, generic_name LIMIT 10""", pos(0, 14, 12, 10),
+             "The ten medicines that earn the most in the window. Compare with the packs ranking above: "
+             "Semaglutide is the slowest mover by packs yet earns the most, because a pack costs about $120.",
+             unit="currencyUSD", show_value="always", color_by=("cold", [(None, BLUE), (1, ORANGE)])),
         table("Disease categories",
               f"""{MOVERS_CTE} SELECT {short_category("disease_category")} AS "disease category",
                          count(*) FILTER (WHERE cold_chain_flag) AS "cold chain",
                          sum(packs) AS packs, round(sum(net), 0) AS "net sales (USD)"
-                  FROM ranked GROUP BY 1 ORDER BY 4 DESC""", pos(14, 14, 10, 11),
-              "Packs and net sales per disease category in the window.",
-              overrides=[text_override("disease category", **{"custom.width": 170}),
-                         text_override("cold chain", **{"custom.width": 80}),
-                         text_override("packs", unit="locale", **{"custom.width": 80}),
-                         gauge_override("net sales (USD)", CYAN, unit="currencyUSD", min=0, max=2000000)]),
+                  FROM ranked GROUP BY 1 ORDER BY 4 DESC""", pos(12, 14, 12, 10),
+              "Packs and net sales per disease category in the window. Cold chain = number of cold-chain "
+              "medicines in the category.",
+              overrides=[text_override("disease category", **{"custom.width": 190}),
+                         text_override("cold chain", **{"custom.width": 90}),
+                         text_override("packs", unit="locale", **{"custom.width": 100}),
+                         gauge_override("net sales (USD)", CYAN, unit="currencyUSD", min=0)]),
         table("Cold-chain medicines",
               f"""{MOVERS_CTE} SELECT generic_name AS medicine, therapeutic_class AS class, packs,
                          round(net, 0) AS "net sales (USD)", round(net / NULLIF(packs, 0), 2) AS "net per pack (USD)",
                          fast_rank AS "volume rank"
-                  FROM ranked WHERE cold_chain_flag ORDER BY net DESC""", pos(0, 25, 24, 6),
-              "The cold-chain medicines: their volume rank is low but their revenue per pack is high.",
+                  FROM ranked WHERE cold_chain_flag ORDER BY net DESC""", pos(0, 24, 24, 6),
+              "The cold-chain medicines: their volume rank is low (out of 63) but their revenue per pack is high.",
               no_value="No cold-chain medicines in this selection",
               overrides=[text_override("packs", unit="locale"), text_override("net sales (USD)", unit="currencyUSD"),
                          text_override("net per pack (USD)", unit="currencyUSD", decimals=2),
                          threshold_text_override("volume rank", [(None, WARN), (40, CRIT)])]),
         table("All medicines ranked by packs sold",
               f"""{MOVERS_CTE} SELECT fast_rank AS rank, generic_name AS medicine, therapeutic_class AS class,
-                         CASE WHEN cold_chain_flag THEN 'yes' ELSE 'no' END AS "cold chain", packs,
+                         CASE WHEN cold_chain_flag THEN 'cold chain' ELSE 'ambient' END AS storage, packs,
                          round(net, 0) AS "net sales (USD)"
-                  FROM ranked ORDER BY fast_rank, generic_name""", pos(0, 31, 24, 14),
-              "Every medicine in the selection, including those with no sales in the window.",
-              overrides=[text_override("packs", unit="locale"), text_override("net sales (USD)", unit="currencyUSD")]),
+                  FROM ranked ORDER BY fast_rank, generic_name""", pos(0, 30, 24, 14),
+              "Every medicine in the selection, including those with no sales in the window. Sort by any "
+              "column by clicking its header.",
+              overrides=[text_override("rank", **{"custom.width": 70}),
+                         text_override("medicine", **{"custom.width": 220}),
+                         text_override("class", **{"custom.width": 260}),
+                         text_override("storage", **{"custom.width": 120, "custom.cellOptions": {"type": "color-text"},
+                                                     "mappings": [{"type": "value", "options": {
+                                                         "cold chain": {"color": ORANGE, "index": 0},
+                                                         "ambient": {"color": "#94A3B8", "index": 1}}}]}),
+                         gauge_override("packs", CYAN, unit="locale", min=0),
+                         gauge_override("net sales (USD)", ORANGE, unit="currencyUSD", min=0)]),
     ]
+
+    layout(panels, {
+        "Fast movers": (0, 3, 12, 15), "Top 10 by net sales": (12, 3, 12, 15),
+        "Slow movers": (0, 18, 12, 10), "Disease categories": (12, 18, 12, 10),
+        "Cold-chain medicines": (0, 28, 24, 6), "All medicines ranked": (0, 34, 24, 14)})
     return dashboard("bi-movers", "Sales and demand: fast and slow movers",
                      "Which medicines sell the most and least, and how cold-chain medicines compare.", panels,
-                     tags=("pharma-bi",), templating=[V_CLASS, V_WINDOW], time=TIME_ALL)
+                     tags=("pharma-bi",), templating=[V_CLASS, V_WINDOW], time=TIME_ALL,
+                     sections=[(18, "Slow movers and disease categories (last $window months)", True),
+                               (28, "Detail: cold-chain medicines and the full ranking", True)])
 
 
 def main() -> None:
