@@ -114,8 +114,8 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Consumption vs forecast",
-      "description": "(Packs consumed - packs forecast) / packs forecast x 100, from summed packs. Positive means hospitals consumed more than forecast.",
+      "title": "Over forecast",
+      "description": "Consumption vs forecast: (packs consumed - packs forecast) / packs forecast x 100, from summed packs. A plus sign means hospitals consumed more than forecast (under-forecast).",
       "gridPos": {
         "x": 0,
         "y": 0,
@@ -135,7 +135,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT round(100.0 * (sum(f.consumed_quantity_packs) - sum(f.forecast_demand_packs))\n                       / NULLIF(sum(f.forecast_demand_packs), 0), 2) FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)",
+          "rawSql": "SELECT CASE WHEN v >= 0 THEN '+' ELSE '' END || round(v, 1)::text || '%' FROM (\n                   SELECT 100.0 * (sum(f.consumed_quantity_packs) - sum(f.forecast_demand_packs))\n                          / NULLIF(sum(f.forecast_demand_packs), 0) AS v FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)) t",
           "refId": "A"
         }
       ],
@@ -148,15 +148,13 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#06B6D4",
                 "value": null
               }
             ]
           },
           "mappings": [],
-          "noValue": "No data",
-          "unit": "percent",
-          "decimals": 1
+          "noValue": "No data"
         },
         "overrides": []
       },
@@ -165,10 +163,10 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/.*/",
           "values": false
         },
-        "colorMode": "none",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
         "justifyMode": "auto",
@@ -178,8 +176,8 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Forecast error (WAPE)",
-      "description": "Weighted absolute percentage error: sum of |consumed - forecast| at hospital, medicine and month level / sum consumed x 100. Lower is better; over- and under-forecasts do not cancel.",
+      "title": "Forecast WAPE",
+      "description": "Weighted absolute percentage error: sum of |consumed - forecast| at hospital, medicine and month level / sum consumed x 100. Lower is better; over- and under-forecasts do not cancel. No sparkline: a ratio must come from summed numerator and denominator, not an average of months.",
       "gridPos": {
         "x": 4,
         "y": 0,
@@ -212,7 +210,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#06B6D4",
                 "value": null
               }
             ]
@@ -232,7 +230,7 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "none",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
         "justifyMode": "auto",
@@ -242,8 +240,8 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Request fill rate",
-      "description": "Packs received / packs requested x 100 (ratio of sums).",
+      "title": "Fill rate",
+      "description": "Request fill rate: packs received / packs requested x 100 (ratio of sums). Green at 95% or more, amber from 90%, red below. The 95% target is our assumption: the source defines no service-level agreement.",
       "gridPos": {
         "x": 8,
         "y": 0,
@@ -276,8 +274,16 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#EF4444",
                 "value": null
+              },
+              {
+                "color": "#F59E0B",
+                "value": 90
+              },
+              {
+                "color": "#10B981",
+                "value": 95
               }
             ]
           },
@@ -296,7 +302,7 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "none",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
         "justifyMode": "auto",
@@ -306,8 +312,8 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Dispensing service level",
-      "description": "Share of demand that could be dispensed: 1 - unfulfilled / (dispensed + unfulfilled). This is what the source's ServiceLevelPct measures; it differs from the request fill rate beside it (decision 14).",
+      "title": "Service level",
+      "description": "Dispensing service level: share of demand that could be dispensed = 1 - unfulfilled / (dispensed + unfulfilled). This is what the source's ServiceLevelPct measures; it differs from the request fill rate beside it (decision 14). Green at 99% or more.",
       "gridPos": {
         "x": 12,
         "y": 0,
@@ -340,8 +346,16 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#EF4444",
                 "value": null
+              },
+              {
+                "color": "#F59E0B",
+                "value": 95
+              },
+              {
+                "color": "#10B981",
+                "value": 99
               }
             ]
           },
@@ -360,7 +374,7 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "none",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "value",
         "justifyMode": "auto",
@@ -370,8 +384,8 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Unfulfilled demand",
-      "description": "Packs of demand that could not be met (source value).",
+      "title": "Unfulfilled",
+      "description": "Packs of demand that could not be met (source value). Sparkline: packs per month.",
       "gridPos": {
         "x": 16,
         "y": 0,
@@ -389,9 +403,9 @@
             "uid": "pharma-pg"
           },
           "editorMode": "code",
-          "format": "table",
+          "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT coalesce(sum(f.unfulfilled_demand_packs), 0) FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)",
+          "rawSql": "SELECT d.full_date::timestamp AS time, sum(f.unfulfilled_demand_packs) AS value FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY d.full_date ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -404,27 +418,31 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#10B981",
                 "value": null
+              },
+              {
+                "color": "#EF4444",
+                "value": 1
               }
             ]
           },
           "mappings": [],
           "noValue": "No data",
-          "unit": "short"
+          "unit": "locale"
         },
         "overrides": []
       },
       "options": {
         "reduceOptions": {
           "calcs": [
-            "lastNotNull"
+            "sum"
           ],
           "fields": "",
           "values": false
         },
-        "colorMode": "none",
-        "graphMode": "none",
+        "colorMode": "value",
+        "graphMode": "area",
         "textMode": "value",
         "justifyMode": "auto",
         "orientation": "auto"
@@ -434,7 +452,7 @@
       "id": 6,
       "type": "stat",
       "title": "Stockout days",
-      "description": "Days with a stockout, summed over hospital, medicine and month records.",
+      "description": "Days with a stockout, summed over hospital, medicine and month records. Sparkline: per month.",
       "gridPos": {
         "x": 20,
         "y": 0,
@@ -452,9 +470,9 @@
             "uid": "pharma-pg"
           },
           "editorMode": "code",
-          "format": "table",
+          "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT coalesce(sum(f.stockout_days), 0) FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)",
+          "rawSql": "SELECT d.full_date::timestamp AS time, sum(f.stockout_days) AS value FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY d.full_date ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -467,27 +485,31 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#10B981",
                 "value": null
+              },
+              {
+                "color": "#EF4444",
+                "value": 1
               }
             ]
           },
           "mappings": [],
           "noValue": "No data",
-          "unit": "short"
+          "unit": "locale"
         },
         "overrides": []
       },
       "options": {
         "reduceOptions": {
           "calcs": [
-            "lastNotNull"
+            "sum"
           ],
           "fields": "",
           "values": false
         },
-        "colorMode": "none",
-        "graphMode": "none",
+        "colorMode": "value",
+        "graphMode": "area",
         "textMode": "value",
         "justifyMode": "auto",
         "orientation": "auto"
@@ -495,9 +517,9 @@
     },
     {
       "id": 7,
-      "type": "timeseries",
+      "type": "trend",
       "title": "Forecast vs consumption (packs per month)",
-      "description": "Hospital forecast demand (gray) against what was actually consumed (blue), same unit and axis. Filters above apply to every panel.",
+      "description": "Packs consumed (filled cyan) against packs forecast (dashed slate), per month. Consumption runs about 1% above forecast, so the cyan area sits just over the dashed line. The axis ends at the last month with data and grows as refreshes land.",
       "gridPos": {
         "x": 0,
         "y": 4,
@@ -515,9 +537,9 @@
             "uid": "pharma-pg"
           },
           "editorMode": "code",
-          "format": "time_series",
+          "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT d.full_date::timestamp AS time, sum(f.forecast_demand_packs) AS \"Forecast\",\n                          sum(f.consumed_quantity_packs) AS \"Consumed\" FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)\n                   GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT extract(epoch FROM d.full_date) * 1000 AS month, sum(f.forecast_demand_packs) AS \"Forecast\",\n                         sum(f.consumed_quantity_packs) AS \"Consumed\" FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital)\n                  GROUP BY d.full_date ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -525,15 +547,15 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "fixedColor": "#06B6D4"
           },
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
             "lineInterpolation": "linear",
             "fillOpacity": 0,
-            "showPoints": "always",
-            "pointSize": 8,
+            "showPoints": "auto",
+            "pointSize": 6,
             "spanNulls": true,
             "axisGridShow": true,
             "axisBorderShow": false,
@@ -541,12 +563,7 @@
             "scaleDistribution": {
               "type": "linear"
             },
-            "barAlignment": 0,
             "gradientMode": "none",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
             "hideFrom": {
               "legend": false,
               "tooltip": false,
@@ -563,10 +580,22 @@
               }
             ]
           },
-          "unit": "short",
+          "unit": "locale",
           "noValue": "No data"
         },
         "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "month"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:MMM YY"
+              }
+            ]
+          },
           {
             "matcher": {
               "id": "byName",
@@ -577,8 +606,16 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#3987e5"
+                  "fixedColor": "#06B6D4"
                 }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 35
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
               }
             ]
           },
@@ -592,14 +629,33 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#898781"
+                  "fixedColor": "#94A3B8"
                 }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    8
+                  ]
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
               }
             ]
           }
         ]
       },
       "options": {
+        "xField": "month",
         "legend": {
           "showLegend": true,
           "displayMode": "list",
@@ -608,15 +664,15 @@
         },
         "tooltip": {
           "mode": "multi",
-          "sort": "desc"
+          "sort": "none"
         }
       }
     },
     {
       "id": 8,
       "type": "barchart",
-      "title": "Consumption vs forecast by disease category (%)",
-      "description": "Variance from summed packs per disease category. Positive = consumed more than forecast. The zero line is the forecast.",
+      "title": "Over/under forecast by disease category (%)",
+      "description": "Variance from summed packs per disease category; positive = consumed more than forecast. Teal under 1%, amber from 1%, coral from 1.3%: the top three categories are where the forecast under-calls most.",
       "gridPos": {
         "x": 14,
         "y": 4,
@@ -636,15 +692,14 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT m.disease_category AS \"disease category\",\n                        round(100.0 * (sum(f.consumed_quantity_packs) - sum(f.forecast_demand_packs))\n                              / NULLIF(sum(f.forecast_demand_packs), 0), 2) AS \"Variance (%)\"\n                 FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT CASE m.disease_category WHEN 'Pain and Inflammatory Conditions' THEN 'Pain & Inflammation' WHEN 'Neurological and Mental Health Conditions' THEN 'Neuro & Mental Health' WHEN 'Gastrointestinal Disease' THEN 'Gastrointestinal' WHEN 'Cardiovascular Disease' THEN 'Cardiovascular' WHEN 'Respiratory Disease' THEN 'Respiratory' WHEN 'Infectious Disease' THEN 'Infectious' WHEN 'Diabetes Mellitus' THEN 'Diabetes' ELSE m.disease_category END AS \"disease category\",\n                        round(100.0 * (sum(f.consumed_quantity_packs) - sum(f.forecast_demand_packs))\n                              / NULLIF(sum(f.forecast_demand_packs), 0), 2) AS \"Variance (%)\"\n                 FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY m.disease_category ORDER BY 2 DESC",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "mode": "thresholds"
           },
           "custom": {
             "fillOpacity": 90,
@@ -669,22 +724,31 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#06B6D4",
                 "value": null
+              },
+              {
+                "color": "#F59E0B",
+                "value": 1.0
+              },
+              {
+                "color": "#EF4444",
+                "value": 1.3
               }
             ]
           },
           "unit": "percent",
+          "decimals": 2,
           "noValue": "No data"
         },
         "overrides": []
       },
       "options": {
         "orientation": "horizontal",
-        "showValue": "auto",
+        "showValue": "always",
         "stacking": "none",
         "groupWidth": 0.7,
-        "barWidth": 0.4,
+        "barWidth": 0.7,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -705,7 +769,7 @@
       "id": 9,
       "type": "table",
       "title": "Largest forecast gaps by medicine",
-      "description": "The ten medicines whose total consumption is furthest from forecast, in packs. WAPE shows month-by-month error even where over- and under-forecasts cancel.",
+      "description": "The ten medicines whose total consumption is furthest from forecast, in packs. The bar shows the gap in packs; variance (%) turns amber from 1.5% and coral from 2%. WAPE shows month-by-month error even where over- and under-forecasts cancel.",
       "gridPos": {
         "x": 0,
         "y": 13,
@@ -759,7 +823,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 140
+                "value": 160
               }
             ]
           },
@@ -771,7 +835,11 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "short"
+                "value": "locale"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
               }
             ]
           },
@@ -783,7 +851,122 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "short"
+                "value": "locale"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "variance (packs)"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "gradient",
+                  "valueDisplayMode": "text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F59E0B"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 3000
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "variance (%)"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#06B6D4",
+                      "value": null
+                    },
+                    {
+                      "color": "#F59E0B",
+                      "value": 1.5
+                    },
+                    {
+                      "color": "#EF4444",
+                      "value": 2.0
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 105
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "WAPE (%)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.width",
+                "value": 90
               }
             ]
           }
@@ -804,9 +987,9 @@
     },
     {
       "id": 10,
-      "type": "timeseries",
+      "type": "barchart",
       "title": "Unfulfilled demand by month (packs)",
-      "description": "Demand that could not be met, per month.",
+      "description": "Demand that could not be met, per month. Slate under 50 packs, amber from 50, coral from 150; the dashed line marks 150 packs. The late-2024 and late-2025 spikes are the shortage peaks.",
       "gridPos": {
         "x": 14,
         "y": 13,
@@ -824,110 +1007,24 @@
             "uid": "pharma-pg"
           },
           "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT d.full_date::timestamp AS time, sum(f.unfulfilled_demand_packs) AS \"Unfulfilled packs\"\n                   FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1 ORDER BY 1",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#3987e5"
-          },
-          "custom": {
-            "drawStyle": "bars",
-            "lineWidth": 2,
-            "lineInterpolation": "linear",
-            "fillOpacity": 85,
-            "showPoints": "never",
-            "pointSize": 8,
-            "spanNulls": true,
-            "axisGridShow": true,
-            "axisBorderShow": false,
-            "axisPlacement": "auto",
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "barAlignment": 0,
-            "gradientMode": "none",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short",
-          "noValue": "No data"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "showLegend": false,
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 11,
-      "type": "barchart",
-      "title": "Unfulfilled demand: hospital and medicine pairs",
-      "description": "The ten hospital and medicine combinations with the most unmet demand.",
-      "gridPos": {
-        "x": 0,
-        "y": 24,
-        "w": 12,
-        "h": 10
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "pharma-pg"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "pharma-pg"
-          },
-          "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT h.hospital_name || ' - ' || m.generic_name AS pair,\n                        sum(f.unfulfilled_demand_packs) AS \"Unfulfilled packs\"\n                 FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY h.hospital_name, m.generic_name\n                 HAVING sum(f.unfulfilled_demand_packs) > 0 ORDER BY 2 DESC LIMIT 10",
+          "rawSql": "SELECT to_char(d.full_date, 'YYYY-MM') AS month, sum(f.unfulfilled_demand_packs) AS \"Unfulfilled packs\"\n                 FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "mode": "thresholds"
           },
           "custom": {
             "fillOpacity": 90,
             "lineWidth": 0,
             "gradientMode": "none",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
             "axisBorderShow": false,
             "axisPlacement": "auto",
             "axisGridShow": true,
@@ -947,25 +1044,33 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#64748B",
                 "value": null
+              },
+              {
+                "color": "#F59E0B",
+                "value": 50
+              },
+              {
+                "color": "#EF4444",
+                "value": 150
               }
             ]
           },
-          "unit": "short",
+          "unit": "locale",
           "noValue": "No data"
         },
         "overrides": []
       },
       "options": {
-        "orientation": "horizontal",
-        "showValue": "auto",
+        "orientation": "vertical",
+        "showValue": "never",
         "stacking": "none",
         "groupWidth": 0.7,
-        "barWidth": 0.4,
+        "barWidth": 0.75,
         "barRadius": 0.15,
         "fullHighlight": false,
-        "xTickLabelRotation": 0,
+        "xTickLabelRotation": -45,
         "xTickLabelSpacing": 0,
         "legend": {
           "showLegend": false,
@@ -980,15 +1085,15 @@
       }
     },
     {
-      "id": 12,
+      "id": 11,
       "type": "table",
-      "title": "Unfulfilled demand detail",
-      "description": "Where demand went unmet: how much, the request fill rate and how often stock ran out.",
+      "title": "Unfulfilled packs: hospital x disease category",
+      "description": "A heat map: each cell is the unfulfilled packs for one hospital and disease category in the selected period. Darker amber/coral = more unmet demand; neutral = none.",
       "gridPos": {
-        "x": 12,
+        "x": 0,
         "y": 24,
-        "w": 12,
-        "h": 10
+        "w": 24,
+        "h": 12
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -1003,7 +1108,141 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT h.hospital_name AS hospital, m.generic_name AS medicine,\n                         sum(f.unfulfilled_demand_packs) AS unfulfilled,\n                         round(100.0 * sum(f.received_quantity_packs)\n                               / NULLIF(sum(f.requested_quantity_packs), 0), 2) AS \"fill rate %\",\n                         sum(f.stockout_days) AS \"stockout days\"\n                  FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1, 2 HAVING sum(f.unfulfilled_demand_packs) > 0\n                  ORDER BY 3 DESC, 5 DESC LIMIT 15",
+          "rawSql": "SELECT replace(replace(h.hospital_name, 'Medical Center', 'Med Ctr'), 'Hospital', 'Hosp.') AS hospital, coalesce(sum(f.unfulfilled_demand_packs) FILTER (WHERE m.disease_category = 'Pain and Inflammatory Conditions'), 0) AS \"Pain & Inflammation\",\n                         coalesce(sum(f.unfulfilled_demand_packs) FILTER (WHERE m.disease_category = 'Neurological and Mental Health Conditions'), 0) AS \"Neuro & Mental Health\",\n                         coalesce(sum(f.unfulfilled_demand_packs) FILTER (WHERE m.disease_category = 'Gastrointestinal Disease'), 0) AS \"Gastrointestinal\",\n                         coalesce(sum(f.unfulfilled_demand_packs) FILTER (WHERE m.disease_category = 'Cardiovascular Disease'), 0) AS \"Cardiovascular\",\n                         coalesce(sum(f.unfulfilled_demand_packs) FILTER (WHERE m.disease_category = 'Respiratory Disease'), 0) AS \"Respiratory\",\n                         coalesce(sum(f.unfulfilled_demand_packs) FILTER (WHERE m.disease_category = 'Infectious Disease'), 0) AS \"Infectious\",\n                         coalesce(sum(f.unfulfilled_demand_packs) FILTER (WHERE m.disease_category = 'Diabetes Mellitus'), 0) AS \"Diabetes\",\n                         coalesce(sum(f.unfulfilled_demand_packs), 0) AS \"Total\"\n                  FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY h.hospital_name ORDER BY \"Total\" DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hospital"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(?!hospital$).*"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#1E293B",
+                      "value": null
+                    },
+                    {
+                      "color": "#78591A",
+                      "value": 1
+                    },
+                    {
+                      "color": "#B7791F",
+                      "value": 30
+                    },
+                    {
+                      "color": "#D9822B",
+                      "value": 80
+                    },
+                    {
+                      "color": "#DC2626",
+                      "value": 150
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Unfulfilled demand hotspots (top 15 hospital-medicine pairs)",
+      "description": "The fifteen hospital and medicine pairs with the most unmet demand. The bar shows unfulfilled packs; fill rate is amber below 95% and coral below 90%.",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 14,
+        "h": 12
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT h.hospital_name AS hospital, m.generic_name AS medicine,\n                         sum(f.unfulfilled_demand_packs) AS \"unfulfilled packs\",\n                         round(100.0 * sum(f.received_quantity_packs)\n                               / NULLIF(sum(f.requested_quantity_packs), 0), 1) AS \"fill rate (%)\",\n                         sum(f.stockout_days) AS \"stockout days\"\n                  FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1, 2 HAVING sum(f.unfulfilled_demand_packs) > 0\n                  ORDER BY 3 DESC, 5 DESC LIMIT 15",
           "refId": "A"
         }
       ],
@@ -1037,7 +1276,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 205
+                "value": 240
               }
             ]
           },
@@ -1049,7 +1288,134 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 125
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unfulfilled packs"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "gradient",
+                  "valueDisplayMode": "text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#EF4444"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 900
+              },
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "fill rate (%)"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#EF4444",
+                      "value": null
+                    },
+                    {
+                      "color": "#F59E0B",
+                      "value": 90
+                    },
+                    {
+                      "color": "#10B981",
+                      "value": 95
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "stockout days"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "#F59E0B",
+                      "value": 10
+                    },
+                    {
+                      "color": "#EF4444",
+                      "value": 30
+                    }
+                  ]
+                }
               }
             ]
           }
@@ -1071,13 +1437,13 @@
     {
       "id": 13,
       "type": "barchart",
-      "title": "Stockout days by hospital",
-      "description": "Days with a stockout, by hospital, summed over medicines and months.",
+      "title": "Stockout days by hospital (hospitals with at least one)",
+      "description": "Days with a stockout, by hospital, summed over medicines and months. Slate 1-9 days, amber 10-29, coral 30 or more. Hospitals with no stockout days are not drawn (see the heat map).",
       "gridPos": {
-        "x": 0,
-        "y": 34,
-        "w": 12,
-        "h": 9
+        "x": 14,
+        "y": 36,
+        "w": 10,
+        "h": 12
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -1092,15 +1458,14 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT h.hospital_name AS hospital, sum(f.stockout_days) AS \"Stockout days\"\n                 FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT h.hospital_name AS hospital, sum(f.stockout_days) AS \"Stockout days\"\n                 FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1 HAVING sum(f.stockout_days) > 0 ORDER BY 2 DESC",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "mode": "thresholds"
           },
           "custom": {
             "fillOpacity": 90,
@@ -1125,22 +1490,30 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#64748B",
                 "value": null
+              },
+              {
+                "color": "#F59E0B",
+                "value": 10
+              },
+              {
+                "color": "#EF4444",
+                "value": 30
               }
             ]
           },
-          "unit": "short",
+          "unit": "locale",
           "noValue": "No data"
         },
         "overrides": []
       },
       "options": {
         "orientation": "horizontal",
-        "showValue": "auto",
+        "showValue": "always",
         "stacking": "none",
         "groupWidth": 0.7,
-        "barWidth": 0.4,
+        "barWidth": 0.7,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -1159,14 +1532,14 @@
     },
     {
       "id": 14,
-      "type": "timeseries",
+      "type": "trend",
       "title": "Request fill rate by month (%)",
-      "description": "Packs received / packs requested, by month. The axis does not start at zero: it shows small movements around a high rate.",
+      "description": "Packs received / packs requested, by month, on a 88-96% axis so the movement is shown in honest proportion. The dashed green line is the assumed 95% target: the rate stays about 2 points below it.",
       "gridPos": {
-        "x": 12,
-        "y": 34,
-        "w": 12,
-        "h": 9
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 8
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -1179,9 +1552,9 @@
             "uid": "pharma-pg"
           },
           "editorMode": "code",
-          "format": "time_series",
+          "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT d.full_date::timestamp AS time,\n                          round(100.0 * sum(f.received_quantity_packs)\n                                / NULLIF(sum(f.requested_quantity_packs), 0), 2) AS \"Fill rate (%)\"\n                   FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT extract(epoch FROM d.full_date) * 1000 AS month, round(100.0 * sum(f.received_quantity_packs)\n                                / NULLIF(sum(f.requested_quantity_packs), 0), 2) AS \"Fill rate (%)\"\n                  FROM mart.fact_hospital_demand f\n       JOIN mart.dim_date d ON d.date_key = f.demand_month_key\n       JOIN mart.dim_medicine m ON m.medicine_key = f.medicine_key\n       JOIN mart.dim_hospital h ON h.hospital_key = f.hospital_key\n       WHERE $__timeFilter(d.full_date) AND m.disease_category IN ($disease_category)\n         AND h.hospital_name IN ($hospital) GROUP BY d.full_date ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -1189,15 +1562,15 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "fixedColor": "#F59E0B"
           },
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
             "lineInterpolation": "linear",
             "fillOpacity": 0,
-            "showPoints": "always",
-            "pointSize": 8,
+            "showPoints": "auto",
+            "pointSize": 6,
             "spanNulls": true,
             "axisGridShow": true,
             "axisBorderShow": false,
@@ -1205,11 +1578,11 @@
             "scaleDistribution": {
               "type": "linear"
             },
-            "barAlignment": 0,
             "gradientMode": "none",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
+            "axisSoftMin": 88,
+            "axisSoftMax": 96,
+            "thresholdsStyle": {
+              "mode": "dashed"
             },
             "hideFrom": {
               "legend": false,
@@ -1222,17 +1595,36 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#F59E0B",
                 "value": null
+              },
+              {
+                "color": "#10B981",
+                "value": 95
               }
             ]
           },
           "unit": "percent",
+          "decimals": 1,
           "noValue": "No data"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "month"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:MMM YY"
+              }
+            ]
+          }
+        ]
       },
       "options": {
+        "xField": "month",
         "legend": {
           "showLegend": false,
           "displayMode": "list",
@@ -1241,7 +1633,7 @@
         },
         "tooltip": {
           "mode": "multi",
-          "sort": "desc"
+          "sort": "none"
         }
       }
     }

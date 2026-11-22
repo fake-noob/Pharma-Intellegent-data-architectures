@@ -124,7 +124,7 @@
     {
       "id": 27,
       "type": "stat",
-      "title": "Medicines in view",
+      "title": "Medicines",
       "description": "Medicines matching the disease-category filter, including those with no sales in the window.",
       "gridPos": {
         "x": 0,
@@ -165,7 +165,7 @@
           },
           "mappings": [],
           "noValue": "No data",
-          "unit": "short"
+          "unit": "locale"
         },
         "overrides": []
       },
@@ -187,7 +187,7 @@
     {
       "id": 28,
       "type": "stat",
-      "title": "Cold-chain medicines",
+      "title": "Cold-chain SKUs",
       "description": "Medicines that need cold-chain storage, in the current selection.",
       "gridPos": {
         "x": 4,
@@ -228,7 +228,7 @@
           },
           "mappings": [],
           "noValue": "No data",
-          "unit": "short"
+          "unit": "locale"
         },
         "overrides": []
       },
@@ -250,7 +250,7 @@
     {
       "id": 29,
       "type": "stat",
-      "title": "Cold-chain sales share",
+      "title": "Cold sales %",
       "description": "Net sales of cold-chain medicines / all net sales in the window x 100.",
       "gridPos": {
         "x": 8,
@@ -314,7 +314,7 @@
     {
       "id": 30,
       "type": "stat",
-      "title": "Cold-chain pack share",
+      "title": "Cold packs %",
       "description": "Packs of cold-chain medicines / all packs in the window x 100. Compare with the share of net sales beside it: cold-chain medicines sell few packs but earn much more per pack.",
       "gridPos": {
         "x": 12,
@@ -531,7 +531,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "fixedColor": "#06B6D4"
           },
           "custom": {
             "fillOpacity": 90,
@@ -561,7 +561,7 @@
               }
             ]
           },
-          "unit": "short",
+          "unit": "locale",
           "noValue": "No data"
         },
         "overrides": [
@@ -599,10 +599,10 @@
       },
       "options": {
         "orientation": "horizontal",
-        "showValue": "auto",
+        "showValue": "always",
         "stacking": "normal",
         "groupWidth": 0.7,
-        "barWidth": 0.4,
+        "barWidth": 0.7,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -651,7 +651,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "fixedColor": "#06B6D4"
           },
           "custom": {
             "fillOpacity": 90,
@@ -681,7 +681,7 @@
               }
             ]
           },
-          "unit": "short",
+          "unit": "locale",
           "noValue": "No data"
         },
         "overrides": [
@@ -719,10 +719,10 @@
       },
       "options": {
         "orientation": "horizontal",
-        "showValue": "auto",
+        "showValue": "always",
         "stacking": "normal",
         "groupWidth": 0.7,
-        "barWidth": 0.4,
+        "barWidth": 0.7,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -832,7 +832,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "short"
+                "value": "locale"
               }
             ]
           }
@@ -876,7 +876,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT disease_category AS \"disease category\",\n                         count(*) FILTER (WHERE cold_chain_flag) AS \"cold chain\",\n                         sum(packs) AS packs, round(sum(net), 0) AS \"net sales (USD)\"\n                  FROM ranked GROUP BY 1 ORDER BY 4 DESC",
+          "rawSql": "WITH bounds AS (SELECT max((year_month || '-01')::date) AS last_month FROM mart.agg_sales_month),\nvol AS (\n  SELECT a.medicine_id, sum(a.quantity_sold_packs) AS packs, sum(a.net_sales_amount_usd) AS net\n  FROM mart.agg_sales_month a, bounds b\n  WHERE (a.year_month || '-01')::date > b.last_month - ($window || ' months')::interval\n  GROUP BY 1),\nranked AS (\n  SELECT m.medicine_id, m.generic_name, m.therapeutic_class, m.disease_category, m.cold_chain_flag,\n         coalesce(v.packs, 0) AS packs, coalesce(v.net, 0) AS net,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) DESC) AS fast_rank,\n         rank() OVER (ORDER BY coalesce(v.packs, 0) ASC) AS slow_rank\n  FROM mart.dim_medicine m LEFT JOIN vol v ON v.medicine_id = m.medicine_id\n  WHERE m.is_current AND m.medicine_key <> 0 AND m.disease_category IN ($disease_category)) SELECT CASE disease_category WHEN 'Pain and Inflammatory Conditions' THEN 'Pain & Inflammation' WHEN 'Neurological and Mental Health Conditions' THEN 'Neuro & Mental Health' WHEN 'Gastrointestinal Disease' THEN 'Gastrointestinal' WHEN 'Cardiovascular Disease' THEN 'Cardiovascular' WHEN 'Respiratory Disease' THEN 'Respiratory' WHEN 'Infectious Disease' THEN 'Infectious' WHEN 'Diabetes Mellitus' THEN 'Diabetes' ELSE disease_category END AS \"disease category\",\n                         count(*) FILTER (WHERE cold_chain_flag) AS \"cold chain\",\n                         sum(packs) AS packs, round(sum(net), 0) AS \"net sales (USD)\"\n                  FROM ranked GROUP BY 1 ORDER BY 4 DESC",
           "refId": "A"
         }
       ],
@@ -910,7 +910,19 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 200
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cold chain"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
               }
             ]
           },
@@ -922,7 +934,11 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "short"
+                "value": "locale"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
               }
             ]
           },
@@ -933,8 +949,31 @@
             },
             "properties": [
               {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "gradient",
+                  "valueDisplayMode": "text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#06B6D4"
+                }
+              },
+              {
                 "id": "unit",
                 "value": "currencyUSD"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 2000000
               }
             ]
           }
@@ -1011,7 +1050,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "short"
+                "value": "locale"
               }
             ]
           },
@@ -1024,6 +1063,58 @@
               {
                 "id": "unit",
                 "value": "currencyUSD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "net per pack (USD)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "volume rank"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#F59E0B",
+                      "value": null
+                    },
+                    {
+                      "color": "#EF4444",
+                      "value": 40
+                    }
+                  ]
+                }
               }
             ]
           }
@@ -1100,7 +1191,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "short"
+                "value": "locale"
               }
             ]
           },

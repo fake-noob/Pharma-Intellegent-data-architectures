@@ -63,7 +63,7 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Batch success rate",
+      "title": "Success rate",
       "description": "Successful batches / attempted batches x 100. A batch is one file load; duplicates that were skipped are not attempts.",
       "gridPos": {
         "x": 0,
@@ -97,15 +97,15 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "#d03b3b",
+                "color": "#EF4444",
                 "value": null
               },
               {
-                "color": "#fab219",
+                "color": "#F59E0B",
                 "value": 90
               },
               {
-                "color": "#0ca30c",
+                "color": "#10B981",
                 "value": 99.9
               }
             ]
@@ -168,11 +168,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "#0ca30c",
+                "color": "#10B981",
                 "value": null
               },
               {
-                "color": "#d03b3b",
+                "color": "#EF4444",
                 "value": 1
               }
             ]
@@ -183,7 +183,7 @@
               "options": {
                 "0": {
                   "text": "✔ none",
-                  "color": "#0ca30c"
+                  "color": "#10B981"
                 }
               }
             }
@@ -313,7 +313,7 @@
           },
           "mappings": [],
           "noValue": "No data",
-          "unit": "short"
+          "unit": "locale"
         },
         "overrides": []
       },
@@ -335,7 +335,7 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Median load speed",
+      "title": "Load speed",
       "description": "Median of rows / load duration across batches.",
       "gridPos": {
         "x": 16,
@@ -398,7 +398,7 @@
     {
       "id": 6,
       "type": "stat",
-      "title": "Duplicates skipped",
+      "title": "Duplicates",
       "description": "Files whose identical content was already staged; they are recorded but not loaded twice.",
       "gridPos": {
         "x": 20,
@@ -489,7 +489,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "fixedColor": "#06B6D4"
           },
           "custom": {
             "fillOpacity": 90,
@@ -529,7 +529,7 @@
         "showValue": "auto",
         "stacking": "none",
         "groupWidth": 0.7,
-        "barWidth": 0.4,
+        "barWidth": 0.7,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -578,7 +578,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "fixedColor": "#06B6D4"
           },
           "custom": {
             "fillOpacity": 90,
@@ -608,7 +608,7 @@
               }
             ]
           },
-          "unit": "short",
+          "unit": "locale",
           "noValue": "No data"
         },
         "overrides": []
@@ -618,7 +618,7 @@
         "showValue": "auto",
         "stacking": "none",
         "groupWidth": 0.7,
-        "barWidth": 0.4,
+        "barWidth": 0.7,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -667,7 +667,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "fixedColor": "#06B6D4"
           },
           "custom": {
             "drawStyle": "line",
@@ -897,17 +897,17 @@
                     "options": {
                       "loaded": {
                         "text": "✔ loaded",
-                        "color": "#0ca30c",
+                        "color": "#10B981",
                         "index": 0
                       },
                       "validated": {
                         "text": "✔ validated",
-                        "color": "#0ca30c",
+                        "color": "#10B981",
                         "index": 1
                       },
                       "failed": {
                         "text": "✖ failed",
-                        "color": "#d03b3b",
+                        "color": "#EF4444",
                         "index": 2
                       },
                       "skipped_duplicate": {
@@ -917,7 +917,7 @@
                       },
                       "running": {
                         "text": "… running",
-                        "color": "#fab219",
+                        "color": "#F59E0B",
                         "index": 4
                       }
                     }
@@ -940,7 +940,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 330
+                "value": 250
               }
             ]
           },
@@ -952,7 +952,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "short"
+                "value": "locale"
               }
             ]
           },
@@ -964,7 +964,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "short"
+                "value": "locale"
               }
             ]
           }

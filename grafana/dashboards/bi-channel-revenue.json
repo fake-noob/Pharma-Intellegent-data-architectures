@@ -54,28 +54,7 @@
     }
   ],
   "annotations": {
-    "list": [
-      {
-        "name": "Sales ramp-up",
-        "enable": true,
-        "iconColor": "#898781",
-        "datasource": {
-          "type": "grafana-postgresql-datasource",
-          "uid": "pharma-pg"
-        },
-        "target": {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "pharma-pg"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "refId": "Anno",
-          "rawSql": "SELECT '2023-01-30'::timestamp AS time, '2023-03-01'::timestamp AS timeend,\n                                   'Sales ramp-up: sales data starts 2023-01-30 (excluded from growth)' AS text,\n                                   'ramp-up' AS tags"
-        }
-      }
-    ]
+    "list": []
   },
   "templating": {
     "list": [
@@ -239,7 +218,7 @@
           },
           "mappings": [],
           "noValue": "No data",
-          "unit": "short"
+          "unit": "locale"
         },
         "overrides": []
       },
@@ -302,7 +281,7 @@
           },
           "mappings": [],
           "noValue": "No data",
-          "unit": "short"
+          "unit": "locale"
         },
         "overrides": []
       },
@@ -324,7 +303,7 @@
     {
       "id": 18,
       "type": "stat",
-      "title": "Gross margin rate",
+      "title": "Gross margin",
       "description": "Gross margin / net sales x 100 from summed amounts. It is almost the same in every channel and year (about 23.4%): the source applies a fixed markup.",
       "gridPos": {
         "x": 12,
@@ -452,7 +431,7 @@
     {
       "id": 20,
       "type": "stat",
-      "title": "Growth, last 12 months",
+      "title": "12-month growth",
       "description": "Net sales in the latest 12 months vs the 12 months before, for the selected classes and channels (ignores the time picker; the ramp-up months fall outside both windows).",
       "gridPos": {
         "x": 20,
@@ -515,9 +494,9 @@
     },
     {
       "id": 21,
-      "type": "timeseries",
+      "type": "barchart",
       "title": "Net sales by month and channel (USD)",
-      "description": "Stacked monthly net sales for each channel. The shaded band is the sales ramp-up (data starts 2023-01-30). The tall bars follow large pharmacy deliveries in the source data.",
+      "description": "Stacked monthly net sales for each channel. Jan-Feb 2023 are the sales ramp-up (data starts 2023-01-30). The tall bars follow large pharmacy deliveries in the source data. The axis ends at the last month with data.",
       "gridPos": {
         "x": 0,
         "y": 4,
@@ -535,143 +514,9 @@
             "uid": "pharma-pg"
           },
           "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT (a.year_month || '-01')::date::timestamp AS time, sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = 'Retail pharmacy') AS \"Retail pharmacy\", sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = 'Hospital pharmacy') AS \"Hospital pharmacy\", sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = 'E-commerce') AS \"E-commerce\"\n                   FROM mart.agg_sales_month a\n       JOIN mart.dim_medicine m ON m.medicine_id = a.medicine_id AND m.is_current AND m.medicine_key <> 0\n       WHERE (a.year_month || '-01')::date BETWEEN $__timeFrom()::date AND $__timeTo()::date\n         AND m.disease_category IN ($disease_category) AND a.channel_group IN ($channel) GROUP BY 1 ORDER BY 1",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#3987e5"
-          },
-          "custom": {
-            "drawStyle": "bars",
-            "lineWidth": 2,
-            "lineInterpolation": "linear",
-            "fillOpacity": 85,
-            "showPoints": "never",
-            "pointSize": 8,
-            "spanNulls": true,
-            "axisGridShow": true,
-            "axisBorderShow": false,
-            "axisPlacement": "auto",
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "barAlignment": 0,
-            "gradientMode": "none",
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "unit": "currencyUSD",
-          "noValue": "No data"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Retail pharmacy"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#3987e5"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Hospital pharmacy"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#d95926"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "E-commerce"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#199e70"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "showLegend": true,
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 22,
-      "type": "barchart",
-      "title": "Revenue share by channel (%)",
-      "description": "Each channel's share of net sales in the period, largest first.",
-      "gridPos": {
-        "x": 16,
-        "y": 4,
-        "w": 8,
-        "h": 9
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "pharma-pg"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "pharma-pg"
-          },
-          "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT a.channel_group AS channel,\n                        round(100.0 * sum(a.net_sales_amount_usd) / sum(sum(a.net_sales_amount_usd)) OVER (), 1)\n                          AS \"Share of net sales (%)\"\n                 FROM mart.agg_sales_month a\n       JOIN mart.dim_medicine m ON m.medicine_id = a.medicine_id AND m.is_current AND m.medicine_key <> 0\n       WHERE (a.year_month || '-01')::date BETWEEN $__timeFrom()::date AND $__timeTo()::date\n         AND m.disease_category IN ($disease_category) AND a.channel_group IN ($channel) GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT a.year_month AS month, sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = 'Retail pharmacy') AS \"Retail pharmacy\", sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = 'Hospital pharmacy') AS \"Hospital pharmacy\", sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = 'E-commerce') AS \"E-commerce\"\n                 FROM mart.agg_sales_month a\n       JOIN mart.dim_medicine m ON m.medicine_id = a.medicine_id AND m.is_current AND m.medicine_key <> 0\n       WHERE (a.year_month || '-01')::date BETWEEN $__timeFrom()::date AND $__timeTo()::date\n         AND m.disease_category IN ($disease_category) AND a.channel_group IN ($channel) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -679,96 +524,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "#3987e5"
-          },
-          "custom": {
-            "fillOpacity": 90,
-            "lineWidth": 0,
-            "gradientMode": "none",
-            "axisBorderShow": false,
-            "axisPlacement": "auto",
-            "axisGridShow": true,
-            "axisColorMode": "text",
-            "axisCenteredZero": false,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "unit": "percent",
-          "noValue": "No data"
-        },
-        "overrides": []
-      },
-      "options": {
-        "orientation": "horizontal",
-        "showValue": "auto",
-        "stacking": "none",
-        "groupWidth": 0.7,
-        "barWidth": 0.4,
-        "barRadius": 0.15,
-        "fullHighlight": false,
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 0,
-        "legend": {
-          "showLegend": false,
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      }
-    },
-    {
-      "id": 23,
-      "type": "barchart",
-      "title": "Net sales per year by channel (USD)",
-      "description": "Yearly net sales, stacked by channel. The first year starts in the ramp-up, so it is understated.",
-      "gridPos": {
-        "x": 0,
-        "y": 13,
-        "w": 12,
-        "h": 9
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "pharma-pg"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "pharma-pg"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT 'Year ' || left(a.year_month, 4) AS year, sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = 'Retail pharmacy') AS \"Retail pharmacy\", sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = 'Hospital pharmacy') AS \"Hospital pharmacy\", sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = 'E-commerce') AS \"E-commerce\"\n                 FROM mart.agg_sales_month a\n       JOIN mart.dim_medicine m ON m.medicine_id = a.medicine_id AND m.is_current AND m.medicine_key <> 0\n       WHERE (a.year_month || '-01')::date BETWEEN $__timeFrom()::date AND $__timeTo()::date\n         AND m.disease_category IN ($disease_category) AND a.channel_group IN ($channel) GROUP BY 1 ORDER BY 1",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "fixedColor": "#06B6D4"
           },
           "custom": {
             "fillOpacity": 90,
@@ -854,7 +610,233 @@
         "showValue": "never",
         "stacking": "normal",
         "groupWidth": 0.7,
-        "barWidth": 0.4,
+        "barWidth": 0.8,
+        "barRadius": 0.15,
+        "fullHighlight": false,
+        "xTickLabelRotation": -45,
+        "xTickLabelSpacing": 0,
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "barchart",
+      "title": "Revenue share by channel (%)",
+      "description": "Each channel's share of net sales in the period, largest first.",
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT a.channel_group AS channel,\n                        round(100.0 * sum(a.net_sales_amount_usd) / sum(sum(a.net_sales_amount_usd)) OVER (), 1)\n                          AS \"Share of net sales (%)\"\n                 FROM mart.agg_sales_month a\n       JOIN mart.dim_medicine m ON m.medicine_id = a.medicine_id AND m.is_current AND m.medicine_key <> 0\n       WHERE (a.year_month || '-01')::date BETWEEN $__timeFrom()::date AND $__timeTo()::date\n         AND m.disease_category IN ($disease_category) AND a.channel_group IN ($channel) GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#06B6D4"
+          },
+          "custom": {
+            "fillOpacity": 90,
+            "lineWidth": 0,
+            "gradientMode": "none",
+            "axisSoftMax": 70,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "axisGridShow": true,
+            "axisColorMode": "text",
+            "axisCenteredZero": false,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 1,
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.7,
+        "barRadius": 0.15,
+        "fullHighlight": false,
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 23,
+      "type": "barchart",
+      "title": "Net sales per year by channel (USD)",
+      "description": "Yearly net sales, stacked by channel. The first year starts in the ramp-up, so it is understated.",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "pharma-pg"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "pharma-pg"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 'Year ' || left(a.year_month, 4) AS year, sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = 'Retail pharmacy') AS \"Retail pharmacy\", sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = 'Hospital pharmacy') AS \"Hospital pharmacy\", sum(a.net_sales_amount_usd) FILTER (WHERE a.channel_group = 'E-commerce') AS \"E-commerce\"\n                 FROM mart.agg_sales_month a\n       JOIN mart.dim_medicine m ON m.medicine_id = a.medicine_id AND m.is_current AND m.medicine_key <> 0\n       WHERE (a.year_month || '-01')::date BETWEEN $__timeFrom()::date AND $__timeTo()::date\n         AND m.disease_category IN ($disease_category) AND a.channel_group IN ($channel) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#06B6D4"
+          },
+          "custom": {
+            "fillOpacity": 90,
+            "lineWidth": 0,
+            "gradientMode": "none",
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "axisGridShow": true,
+            "axisColorMode": "text",
+            "axisCenteredZero": false,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyUSD",
+          "noValue": "No data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Retail pharmacy"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Hospital pharmacy"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "E-commerce"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "vertical",
+        "showValue": "never",
+        "stacking": "normal",
+        "groupWidth": 0.7,
+        "barWidth": 0.7,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -942,6 +924,50 @@
               {
                 "id": "unit",
                 "value": "currencyUSD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "growth (%)"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#EF4444",
+                      "value": null
+                    },
+                    {
+                      "color": "#10B981",
+                      "value": 0
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
               }
             ]
           }
@@ -1061,7 +1087,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT m.disease_category AS \"disease category\", round(sum(a.net_sales_amount_usd), 0) AS \"Net sales (USD)\"\n                 FROM mart.agg_sales_month a\n       JOIN mart.dim_medicine m ON m.medicine_id = a.medicine_id AND m.is_current AND m.medicine_key <> 0\n       WHERE (a.year_month || '-01')::date BETWEEN $__timeFrom()::date AND $__timeTo()::date\n         AND m.disease_category IN ($disease_category) AND a.channel_group IN ($channel) GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT CASE m.disease_category WHEN 'Pain and Inflammatory Conditions' THEN 'Pain & Inflammation' WHEN 'Neurological and Mental Health Conditions' THEN 'Neuro & Mental Health' WHEN 'Gastrointestinal Disease' THEN 'Gastrointestinal' WHEN 'Cardiovascular Disease' THEN 'Cardiovascular' WHEN 'Respiratory Disease' THEN 'Respiratory' WHEN 'Infectious Disease' THEN 'Infectious' WHEN 'Diabetes Mellitus' THEN 'Diabetes' ELSE m.disease_category END AS \"disease category\", round(sum(a.net_sales_amount_usd), 0) AS \"Net sales (USD)\"\n                 FROM mart.agg_sales_month a\n       JOIN mart.dim_medicine m ON m.medicine_id = a.medicine_id AND m.is_current AND m.medicine_key <> 0\n       WHERE (a.year_month || '-01')::date BETWEEN $__timeFrom()::date AND $__timeTo()::date\n         AND m.disease_category IN ($disease_category) AND a.channel_group IN ($channel) GROUP BY m.disease_category ORDER BY 2 DESC",
           "refId": "A"
         }
       ],
@@ -1069,7 +1095,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "fixedColor": "#06B6D4"
           },
           "custom": {
             "fillOpacity": 90,
@@ -1106,10 +1132,10 @@
       },
       "options": {
         "orientation": "horizontal",
-        "showValue": "auto",
+        "showValue": "always",
         "stacking": "none",
         "groupWidth": 0.7,
-        "barWidth": 0.4,
+        "barWidth": 0.7,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,

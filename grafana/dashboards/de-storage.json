@@ -104,7 +104,7 @@
           },
           "mappings": [],
           "noValue": "No data",
-          "unit": "short"
+          "unit": "locale"
         },
         "overrides": []
       },
@@ -126,7 +126,7 @@
     {
       "id": 13,
       "type": "stat",
-      "title": "Demand fact rows",
+      "title": "Demand rows",
       "description": "Rows in the hospital demand fact table (hospital x medicine x month).",
       "gridPos": {
         "x": 4,
@@ -167,7 +167,7 @@
           },
           "mappings": [],
           "noValue": "No data",
-          "unit": "short"
+          "unit": "locale"
         },
         "overrides": []
       },
@@ -189,7 +189,7 @@
     {
       "id": 14,
       "type": "stat",
-      "title": "DuckDB file size",
+      "title": "DuckDB size",
       "description": "Size of the DuckDB warehouse file on disk, at the last publish.",
       "gridPos": {
         "x": 8,
@@ -315,7 +315,7 @@
     {
       "id": 16,
       "type": "stat",
-      "title": "Warehouse tables",
+      "title": "Tables",
       "description": "Tables in the DuckDB warehouse (dimensions, facts, aggregates, pipeline logs).",
       "gridPos": {
         "x": 16,
@@ -377,7 +377,7 @@
     {
       "id": 17,
       "type": "stat",
-      "title": "Coverage gaps (months)",
+      "title": "Coverage gaps",
       "description": "Calendar months between the first and last date that have no data. 0 means the time range is fully covered.",
       "gridPos": {
         "x": 20,
@@ -411,11 +411,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "#0ca30c",
+                "color": "#10B981",
                 "value": null
               },
               {
-                "color": "#d03b3b",
+                "color": "#EF4444",
                 "value": 1
               }
             ]
@@ -426,7 +426,7 @@
               "options": {
                 "0": {
                   "text": "✔ none",
-                  "color": "#0ca30c"
+                  "color": "#10B981"
                 }
               }
             }
@@ -482,7 +482,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "fixedColor": "#06B6D4"
           },
           "custom": {
             "fillOpacity": 90,
@@ -512,7 +512,7 @@
               }
             ]
           },
-          "unit": "short",
+          "unit": "locale",
           "noValue": "No data"
         },
         "overrides": []
@@ -522,7 +522,7 @@
         "showValue": "auto",
         "stacking": "none",
         "groupWidth": 0.7,
-        "barWidth": 0.4,
+        "barWidth": 0.7,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -571,7 +571,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "#3987e5"
+            "fixedColor": "#06B6D4"
           },
           "custom": {
             "fillOpacity": 90,
@@ -657,7 +657,7 @@
         "showValue": "never",
         "stacking": "normal",
         "groupWidth": 0.7,
-        "barWidth": 0.4,
+        "barWidth": 0.7,
         "barRadius": 0.15,
         "fullHighlight": false,
         "xTickLabelRotation": 0,
@@ -738,7 +738,7 @@
                     "options": {
                       "0": {
                         "text": "✔ 0",
-                        "color": "#0ca30c",
+                        "color": "#10B981",
                         "index": 0
                       }
                     }
@@ -749,7 +749,7 @@
                       "from": 1,
                       "to": 1000000000000.0,
                       "result": {
-                        "color": "#d03b3b",
+                        "color": "#EF4444",
                         "index": 1
                       }
                     }
@@ -849,7 +849,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "short"
+                "value": "locale"
               }
             ]
           }
@@ -926,7 +926,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "short"
+                "value": "locale"
               }
             ]
           }

@@ -23,8 +23,9 @@ from pathlib import Path
 OUT = Path(__file__).parent / "dashboards"
 DS = {"type": "grafana-postgresql-datasource", "uid": "pharma-pg"}
 
-BLUE, ORANGE, AQUA = "#3987e5", "#d95926", "#199e70"        # categorical slots 1-3 (dark steps)
-GOOD, WARN, CRIT = "#0ca30c", "#fab219", "#d03b3b"          # status
+BLUE, ORANGE, AQUA = "#3987e5", "#d95926", "#199e70"        # categorical slots 1-3 (channels, sources)
+SLATE, CYAN = "#64748B", "#06B6D4"                          # neutral baseline / actual volume
+GOOD, WARN, CRIT = "#10B981", "#F59E0B", "#EF4444"          # status: on target / watch / failing
 DOMAIN_COLOR = {"medicine_master": BLUE, "pharmacy_sales": ORANGE, "hospital_demand": AQUA,
                 "Medicine master": BLUE, "Pharmacy sales": ORANGE, "Hospital demand": AQUA}
 
@@ -52,8 +53,10 @@ def color_override(name: str, color: str) -> dict:
 
 
 def stat(title, sql, p, desc, unit=None, decimals=None, thresholds=None, mappings=None,
-         text_mode="value", no_value="No data", text_field=False):
-    """A single headline number. Neutral (white) unless `thresholds` marks it as a status."""
+         text_mode="value", no_value="No data", text_field=False, spark_sql=None, calc="lastNotNull"):
+    """A single headline number. Neutral (white) unless `thresholds` colours it (a status colour,
+    or a single step for a fixed accent). `spark_sql` (time, value) adds a sparkline; `calc` must
+    then reproduce the headline (use "sum" for additive measures; ratios get no sparkline)."""
     steps = [{"color": c, "value": v} for v, c in thresholds] if thresholds else [
         {"color": "text", "value": None}]
     defaults = {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": steps},
@@ -63,40 +66,45 @@ def stat(title, sql, p, desc, unit=None, decimals=None, thresholds=None, mapping
     if decimals is not None:
         defaults["decimals"] = decimals
     return {"id": _id(), "type": "stat", "title": title, "description": desc, "gridPos": p,
-            "datasource": DS, "targets": [target(sql)],
+            "datasource": DS, "targets": [target(spark_sql, "time_series") if spark_sql else target(sql)],
             "fieldConfig": {"defaults": defaults, "overrides": []},
-            "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "/.*/" if text_field else "",
+            "options": {"reduceOptions": {"calcs": [calc], "fields": "/.*/" if text_field else "",
                                           "values": False},
-                        "colorMode": "value" if thresholds else "none", "graphMode": "none",
+                        "colorMode": "value" if thresholds else "none", "graphMode": "area" if spark_sql else "none",
                         "textMode": text_mode, "justifyMode": "auto", "orientation": "auto"}}
 
 
-def bars(title, sql, p, desc, color=BLUE, horizontal=True, stacked=False, series_colors=None,
-         unit=None, x_label_rotation=0, legend=False, show_value="auto"):
+def bars(title, sql, p, desc, color=CYAN, horizontal=True, stacked=False, series_colors=None,
+         unit=None, x_label_rotation=0, legend=False, show_value="auto", thresholds=None,
+         threshold_style=None, bar_width=0.7, decimals=None, soft_max=None):
     """Bars on one baseline. Single series -> one colour; stacked series keep entity colours."""
     overrides = [color_override(n, c) for n, c in (series_colors or {}).items()]
+    steps = [{"color": c, "value": v} for v, c in thresholds] if thresholds else [{"color": "text", "value": None}]
+    colour = {"mode": "thresholds"} if thresholds else {"mode": "fixed", "fixedColor": color}
     return {"id": _id(), "type": "barchart", "title": title, "description": desc, "gridPos": p,
             "datasource": DS, "targets": [target(sql)],
             "fieldConfig": {"defaults": {
-                "color": {"mode": "fixed", "fixedColor": color},
+                "color": colour,
                 "custom": {"fillOpacity": 90, "lineWidth": 0, "gradientMode": "none",
+                           **({"thresholdsStyle": {"mode": threshold_style}} if threshold_style else {}),
+                           **({"axisSoftMax": soft_max} if soft_max is not None else {}),
                            "axisBorderShow": False, "axisPlacement": "auto", "axisGridShow": True,
                            "axisColorMode": "text", "axisCenteredZero": False,
                            "scaleDistribution": {"type": "linear"}, "hideFrom": {
                                "legend": False, "tooltip": False, "viz": False}},
-                "mappings": [], "thresholds": {"mode": "absolute", "steps": [
-                    {"color": "text", "value": None}]},
-                **({"unit": unit} if unit else {}), "noValue": "No data"}, "overrides": overrides},
+                "mappings": [], "thresholds": {"mode": "absolute", "steps": steps},
+                **({"unit": unit} if unit else {}), **({"decimals": decimals} if decimals is not None else {}),
+                "noValue": "No data"}, "overrides": overrides},
             "options": {"orientation": "horizontal" if horizontal else "vertical",
                         "showValue": show_value, "stacking": "normal" if stacked else "none",
-                        "groupWidth": 0.7, "barWidth": 0.4, "barRadius": 0.15, "fullHighlight": False,
+                        "groupWidth": 0.7, "barWidth": bar_width, "barRadius": 0.15, "fullHighlight": False,
                         "xTickLabelRotation": x_label_rotation, "xTickLabelSpacing": 0,
                         "legend": {"showLegend": legend, "displayMode": "list", "placement": "bottom",
                                    "calcs": []},
                         "tooltip": {"mode": "single", "sort": "none"}}}
 
 
-def series(title, sql, p, desc, color=BLUE, unit=None, by_name_colors=None, legend=False,
+def series(title, sql, p, desc, color=CYAN, unit=None, by_name_colors=None, legend=False,
            style="line", time_from=None):
     """Time series with >= 8px markers (sparse data), hairline solid grid, 2px lines."""
     panel = {"id": _id(), "type": "timeseries", "title": title, "description": desc, "gridPos": p,
@@ -120,6 +128,41 @@ def series(title, sql, p, desc, color=BLUE, unit=None, by_name_colors=None, lege
     if time_from:
         panel["timeFrom"] = time_from
     return panel
+
+
+def trend(title, sql, p, desc, x="month", x_unit="time:MMM YY", unit=None, styles=None, soft_min=None,
+          soft_max=None, thresholds=None, threshold_style=None, legend=False, color=CYAN, decimals=None):
+    """Line/area chart on a numeric x axis (epoch milliseconds, formatted as dates).
+
+    Unlike a time series it fits its x axis to the data instead of the dashboard time range, so a
+    refresh that adds months extends the chart and no empty space sits to the right of the data.
+    `styles` maps a series name to extra field properties (colour, dash, fill)."""
+    steps = [{"color": c, "value": v} for v, c in thresholds] if thresholds else [{"color": "text", "value": None}]
+    overrides = [text_override(x, unit=x_unit)]
+    for name, props in (styles or {}).items():
+        overrides.append(text_override(name, **props))
+    return {"id": _id(), "type": "trend", "title": title, "description": desc, "gridPos": p,
+            "datasource": DS, "targets": [target(sql)],
+            "fieldConfig": {"defaults": {
+                "color": {"mode": "fixed", "fixedColor": color},
+                "custom": {"drawStyle": "line", "lineWidth": 2, "lineInterpolation": "linear",
+                           "fillOpacity": 0, "showPoints": "auto", "pointSize": 6, "spanNulls": True,
+                           "axisGridShow": True, "axisBorderShow": False, "axisPlacement": "auto",
+                           "scaleDistribution": {"type": "linear"}, "gradientMode": "none",
+                           **({"axisSoftMin": soft_min} if soft_min is not None else {}),
+                           **({"axisSoftMax": soft_max} if soft_max is not None else {}),
+                           **({"thresholdsStyle": {"mode": threshold_style}} if threshold_style else {}),
+                           "hideFrom": {"legend": False, "tooltip": False, "viz": False}},
+                "mappings": [], "thresholds": {"mode": "absolute", "steps": steps},
+                **({"unit": unit} if unit else {}), **({"decimals": decimals} if decimals is not None else {}),
+                "noValue": "No data"}, "overrides": overrides},
+            "options": {"xField": x, "legend": {"showLegend": legend, "displayMode": "list",
+                                                "placement": "bottom", "calcs": []},
+                        "tooltip": {"mode": "multi", "sort": "none"}}}
+
+
+def fixed(color: str) -> dict:
+    return {"color": {"mode": "fixed", "fixedColor": color}}
 
 
 def table(title, sql, p, desc, overrides=None, no_value="No data", sort=None):
@@ -153,6 +196,21 @@ def status_override(column: str) -> dict:
         {"id": "custom.cellOptions", "value": {"type": "color-text"}}]}
 
 
+def gauge_override(column: str, color: str, **props) -> dict:
+    """Table cell drawn as an inline horizontal bar (gradient) with the number on it."""
+    return text_override(column, **{"custom.cellOptions": {"type": "gauge", "mode": "gradient", "valueDisplayMode": "text"},
+                                    "color": {"mode": "fixed", "fixedColor": color}, **props})
+
+
+def threshold_text_override(column: str, steps: list, **props) -> dict:
+    """Table cell whose text takes the colour of the threshold band the value falls in."""
+    return text_override(column, **{"custom.cellOptions": {"type": "color-text"},
+                                    "color": {"mode": "thresholds"},
+                                    "thresholds": {"mode": "absolute",
+                                                   "steps": [{"color": c, "value": v} for v, c in steps]},
+                                    **props})
+
+
 def text_override(column: str, **props) -> dict:
     return {"matcher": {"id": "byName", "options": column},
             "properties": [{"id": k, "value": v} for k, v in props.items()]}
@@ -181,7 +239,7 @@ OK_STATUS = "status IN ('loaded', 'validated')"
 def batch_ingestion() -> dict:
     t = "$__timeFilter(started_at)"
     panels = [
-        stat("Batch success rate",
+        stat("Success rate",
              f"""SELECT round(100.0 * count(*) FILTER (WHERE {OK_STATUS})
                        / NULLIF(count(*) FILTER (WHERE status IN ('loaded','validated','failed')), 0), 1)
                  FROM staging.ingest_batch WHERE {t}""", pos(0, 0, 4, 4),
@@ -199,12 +257,12 @@ def batch_ingestion() -> dict:
         stat("Rows loaded",
              f"SELECT coalesce(sum(rows_loaded), 0) FROM staging.ingest_batch WHERE {OK_STATUS} AND {t}",
              pos(12, 0, 4, 4), "Records read and stored in raw staging (exact count, not an estimate).",
-             unit="short"),
-        stat("Median load speed",
+             unit="locale"),
+        stat("Load speed",
              f"""SELECT round(percentile_cont(0.5) WITHIN GROUP (ORDER BY rows_loaded / duration_seconds))
                  FROM staging.ingest_batch WHERE {OK_STATUS} AND duration_seconds > 0 AND {t}""",
              pos(16, 0, 4, 4), "Median of rows / load duration across batches.", unit="suffix: rows/s"),
-        stat("Duplicates skipped",
+        stat("Duplicates",
              f"SELECT count(*) FROM staging.ingest_batch WHERE status = 'skipped_duplicate' AND {t}",
              pos(20, 0, 4, 4), "Files whose identical content was already staged; they are recorded "
              "but not loaded twice."),
@@ -218,7 +276,7 @@ def batch_ingestion() -> dict:
              f"""SELECT file_name || ' (#' || batch_id || ')' AS batch, rows_loaded AS "Rows loaded"
                  FROM staging.ingest_batch WHERE {OK_STATUS} AND {t}
                  ORDER BY rows_loaded DESC LIMIT 12""", pos(12, 4, 12, 9),
-             "Records successfully loaded from each file (row count of the data read).", unit="short"),
+             "Records successfully loaded from each file (row count of the data read).", unit="locale"),
         series("Load speed by source (rows per second)",
                f"""SELECT started_at AS time, source_name AS metric, round(rows_loaded / duration_seconds) AS speed
                    FROM staging.ingest_batch WHERE {OK_STATUS} AND duration_seconds > 0 AND {t}
@@ -237,8 +295,8 @@ def batch_ingestion() -> dict:
                         started_at AS started
                  FROM staging.ingest_batch ORDER BY batch_id DESC LIMIT 25""", pos(0, 21, 24, 9),
               "Every ingestion attempt, newest first (the table behind the charts above).",
-              overrides=[status_override("status"), text_override("file", **{"custom.width": 330}),
-                         text_override("rows_read", unit="short"), text_override("rows_loaded", unit="short")]),
+              overrides=[status_override("status"), text_override("file", **{"custom.width": 250}),
+                         text_override("rows_read", unit="locale"), text_override("rows_loaded", unit="locale")]),
     ]
     return dashboard("de-batch-ingestion", "Data engineering: batch ingestion",
                      "Load duration, rows and success rate for every source file staged.", panels)
@@ -266,12 +324,12 @@ def storage() -> dict:
     panels = [
         stat("Sales fact rows",
              "SELECT row_count FROM mart.table_stats WHERE table_name = 'fact_sales'",
-             pos(0, 0, 4, 4), "Rows in the sales fact table (one per sales transaction).", unit="short"),
-        stat("Demand fact rows",
+             pos(0, 0, 4, 4), "Rows in the sales fact table (one per sales transaction).", unit="locale"),
+        stat("Demand rows",
              "SELECT row_count FROM mart.table_stats WHERE table_name = 'fact_hospital_demand'",
              pos(4, 0, 4, 4), "Rows in the hospital demand fact table (hospital x medicine x month).",
-             unit="short"),
-        stat("DuckDB file size",
+             unit="locale"),
+        stat("DuckDB size",
              "SELECT round(duckdb_bytes / 1e6, 1) FROM mart.publish_log ORDER BY published_at DESC LIMIT 1",
              pos(8, 0, 4, 4), "Size of the DuckDB warehouse file on disk, at the last publish.",
              unit="suffix: MB"),
@@ -279,10 +337,10 @@ def storage() -> dict:
              "SELECT round(pg_database_size(current_database()) / 1e6)", pos(12, 0, 4, 4),
              "Physical size of the staging database (live): staging, mart and the pipeline's own tables.",
              unit="suffix: MB"),
-        stat("Warehouse tables",
+        stat("Tables",
              "SELECT count(*) FROM mart.table_stats", pos(16, 0, 4, 4),
              "Tables in the DuckDB warehouse (dimensions, facts, aggregates, pipeline logs)."),
-        stat("Coverage gaps (months)",
+        stat("Coverage gaps",
              f"SELECT coalesce(sum(\"months missing\"), 0) FROM ({COVERAGE_SQL}) c", pos(20, 0, 4, 4),
              "Calendar months between the first and last date that have no data. 0 means the time "
              "range is fully covered.", thresholds=[(None, GOOD), (1, CRIT)],
@@ -291,7 +349,7 @@ def storage() -> dict:
              """SELECT table_name AS "table", row_count AS "Rows" FROM mart.table_stats
                 WHERE row_count >= 1000 ORDER BY row_count DESC""", pos(0, 4, 12, 9),
              "Cumulative records stored in each large warehouse table (SELECT COUNT(*)). Small "
-             "dimension tables are in the table below.", unit="short"),
+             "dimension tables are in the table below.", unit="locale"),
         bars("Staging storage by source domain (MB)",
              """SELECT layer,
                        round(sum(bytes) FILTER (WHERE domain = 'Medicine master') / 1e6, 1) AS "Medicine master",
@@ -312,12 +370,12 @@ def storage() -> dict:
                         coalesce(max_date::text, '–') AS "last date"
                  FROM mart.table_stats ORDER BY row_count DESC""", pos(0, 18, 12, 10),
               "Row counts of every table in the DuckDB warehouse (as of the last publish).",
-              overrides=[text_override("table", **{"custom.width": 250}), text_override("rows", unit="short")]),
+              overrides=[text_override("table", **{"custom.width": 250}), text_override("rows", unit="locale")]),
         table("Staging tables",
               """SELECT layer, domain, row_count AS rows, round(bytes / 1e6, 1) AS "size (MB)"
                  FROM mart.storage_stats ORDER BY layer, domain""", pos(12, 18, 12, 10),
               "Exact row counts and on-disk size of each staging table.",
-              overrides=[text_override("rows", unit="short")]),
+              overrides=[text_override("rows", unit="locale")]),
     ]
     return dashboard("de-storage", "Data engineering: storage and coverage",
                      "Rows, storage footprint and date coverage of the staging area and warehouse.", panels)
@@ -393,7 +451,7 @@ def refresh_monitor() -> dict:
                   FROM mart.publish_log ORDER BY published_at DESC LIMIT 12) t ORDER BY published_at""",
              pos(0, 4, 12, 8), "Total rows in the sales fact at each of the last 12 publishes (oldest left). "
              "A step up is a refresh landing: history is kept and new rows are added.", horizontal=False,
-             unit="short", show_value="never"),
+             unit="locale", show_value="never"),
         bars("Hospital demand rows after each publish",
              """SELECT publish, "Hospital demand rows" FROM (
                   SELECT published_at, to_char(published_at, 'MM-DD HH24:MI') AS publish,
@@ -401,7 +459,7 @@ def refresh_monitor() -> dict:
                   FROM mart.publish_log ORDER BY published_at DESC LIMIT 12) t ORDER BY published_at""",
              pos(12, 4, 12, 8), "Total rows in the hospital demand fact at each publish. Kept in its own chart: "
              "its scale differs from sales, so the two are never shown on one axis.", horizontal=False,
-             unit="short", show_value="never"),
+             unit="locale", show_value="never"),
         bars("Net sales per month (USD)",
              """SELECT year_month AS month, round(sum(net_sales_amount_usd), 0) AS "Net sales (USD)"
                 FROM mart.agg_sales_month GROUP BY 1 ORDER BY 1""", pos(0, 12, 24, 9),
@@ -413,7 +471,7 @@ def refresh_monitor() -> dict:
                         duration_seconds AS seconds, started_at AS started
                  FROM staging.ingest_batch ORDER BY batch_id DESC LIMIT 12""", pos(0, 21, 24, 8),
               "Every file staged, newest first: refresh files appear here as they land.",
-              overrides=[status_override("status"), text_override("rows_loaded", unit="short")]),
+              overrides=[status_override("status"), text_override("rows_loaded", unit="locale")]),
     ]
     return dashboard("de-refresh-monitor", "Data engineering: refresh monitor",
                      "Shows new data arriving: rows, periods and batches after each refresh.", panels)
